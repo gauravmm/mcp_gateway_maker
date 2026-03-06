@@ -1,0 +1,31 @@
+[project]
+name = "mcp-proxy"
+version = "0.1.0"
+description = "Configurable security proxy for MCP servers with plugin-based middleware"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.9.0",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+mcp-proxy = "mcp_proxy.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_proxy"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "anyio[trio]>=4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

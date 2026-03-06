@@ -1,0 +1,48 @@
+# security_filter.yaml
+#
+# Demonstrates the full plugin stack: logging, filtering, and rewriting
+# applied to a single upstream MCP server.
+#
+# What this config does:
+#   1. Logs all tool calls (with payloads) for later analysis.
+#   2. Blocks dangerous write/delete tools.
+#   3. Renames an upstream tool to a friendlier exposed name.
+#   4. Injects a fixed argument into every call to "read_file".
+#
+# Usage:
+#   mcp-proxy --config security_filter.yaml
+
+proxy:
+  name: secure-proxy
+  transport: stdio
+
+upstreams:
+  - name: tools
+    transport:
+      type: stdio
+      command: uvx
+      args: ["mcp-server-filesystem", "/workspace"]
+
+    plugins:
+      # 1. Log everything (outermost — sees the original request before rewrites)
+      - type: logging
+        log_file: logs/audit.jsonl
+        include_payloads: true
+
+      # 2. Block destructive operations
+      - type: filter
+        block_tools:
+          - "write_file"
+          - "delete_*"
+          - "move_*"
+          - "create_directory"
+          - "edit_file"
+
+      # 3. Rename upstream "read_file" -> client sees "read_document"
+      #    and inject a fixed encoding argument
+      - type: rewrite
+        tool_renames:
+          read_file: read_document
+        argument_overrides:
+          read_file:
+            encoding: "utf-8"

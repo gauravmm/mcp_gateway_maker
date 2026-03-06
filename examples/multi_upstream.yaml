@@ -1,0 +1,50 @@
+# multi_upstream.yaml
+#
+# Aggregates two upstream MCP servers (one stdio, one HTTP) into a single
+# proxy endpoint with namespaced tools and a shared audit log.
+#
+# Tool names seen by the client:
+#   fs_read_file, fs_list_directory, ...   (from the filesystem server)
+#   gh_list_repos, gh_get_file, ...        (from the GitHub server)
+#
+# Usage:
+#   GITHUB_TOKEN=ghp_... mcp-proxy --config multi_upstream.yaml
+
+proxy:
+  name: multi-upstream-proxy
+  transport: stdio
+
+# Global logging: every request across all upstreams goes into one log.
+global_plugins:
+  - type: logging
+    log_file: logs/all.jsonl
+    include_payloads: true
+
+upstreams:
+  - name: filesystem
+    namespace: fs
+    transport:
+      type: stdio
+      command: uvx
+      args: ["mcp-server-filesystem", "/home/user/documents"]
+    plugins:
+      # Only allow read operations; block anything that writes or deletes.
+      - type: filter
+        block_tools: ["write_file", "delete_*", "move_file", "create_directory"]
+      # Per-upstream log captures filesystem operations specifically.
+      - type: logging
+        log_file: logs/filesystem.jsonl
+
+  - name: github
+    namespace: gh
+    transport:
+      type: http
+      url: "https://api.github.com/mcp"
+      headers:
+        Authorization: "Bearer ${GITHUB_TOKEN}"
+    plugins:
+      # Allow-list: only expose safe read operations.
+      - type: filter
+        allow_tools: ["list_repos", "get_file", "list_commits", "search_code"]
+      - type: logging
+        log_file: logs/github.jsonl

@@ -1,0 +1,18 @@
+# basic_proxy.yaml
+#
+# Minimal transparent proxy: forwards all traffic from a single stdio upstream
+# to the MCP client with no filtering.  Useful as a starting point.
+#
+# Usage (stdio, e.g. Claude Desktop):
+#   mcp-proxy --config basic_proxy.yaml
+
+proxy:
+  name: basic-proxy
+  transport: stdio
+
+upstreams:
+  - name: backend
+    transport:
+      type: stdio
+      command: python
+      args: ["-m", "some_mcp_server"]

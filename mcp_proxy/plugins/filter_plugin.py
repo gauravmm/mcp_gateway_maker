@@ -5,12 +5,11 @@ from __future__ import annotations
 import fnmatch
 
 import mcp.types as mt
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
+from fastmcp.tools.tool import Tool
 from mcp import McpError
 from mcp.types import ErrorData
-
-from fastmcp.prompts.prompt import Prompt, PromptResult
-from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.tools.tool import Tool, ToolResult
 
 from ..config.schema import FilterPluginConfig
 from .base import PluginBase
@@ -73,10 +72,7 @@ class FilterPlugin(PluginBase):
         return params
 
     async def on_list_tools(self, tools: list[Tool]) -> list[Tool]:
-        return [
-            t for t in tools
-            if _is_allowed(t.name, self._tool_allow, self._tool_block)
-        ]
+        return [t for t in tools if _is_allowed(t.name, self._tool_allow, self._tool_block)]
 
     # ------------------------------------------------------------------
     # Resources
@@ -97,7 +93,8 @@ class FilterPlugin(PluginBase):
 
     async def on_list_resources(self, resources: list[Resource]) -> list[Resource]:
         return [
-            r for r in resources
+            r
+            for r in resources
             if _is_allowed(str(r.uri), self._resource_allow, self._resource_block)
         ]
 
@@ -118,7 +115,4 @@ class FilterPlugin(PluginBase):
         return params
 
     async def on_list_prompts(self, prompts: list[Prompt]) -> list[Prompt]:
-        return [
-            p for p in prompts
-            if _is_allowed(p.name, self._prompt_allow, self._prompt_block)
-        ]
+        return [p for p in prompts if _is_allowed(p.name, self._prompt_allow, self._prompt_block)]

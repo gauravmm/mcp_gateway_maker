@@ -17,12 +17,14 @@ _ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
 def _expand_env_vars(obj: Any) -> Any:
     """Recursively expand ${VAR} in all string values."""
     if isinstance(obj, str):
+
         def replace(m: re.Match) -> str:
             var = m.group(1)
             value = os.environ.get(var)
             if value is None:
                 raise ValueError(f"Environment variable '{var}' is not set")
             return value
+
         return _ENV_VAR_RE.sub(replace, obj)
     elif isinstance(obj, dict):
         return {k: _expand_env_vars(v) for k, v in obj.items()}

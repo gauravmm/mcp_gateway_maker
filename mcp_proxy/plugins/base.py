@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import mcp.types as mt
-
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.tools.tool import Tool, ToolResult
@@ -67,9 +64,7 @@ class PluginBase:
         """Called after a resource read response arrives from the upstream server."""
         return result
 
-    async def on_list_resources(
-        self, resources: list[Resource]
-    ) -> list[Resource]:
+    async def on_list_resources(self, resources: list[Resource]) -> list[Resource]:
         """Called with the resource list returned by the upstream server."""
         return resources
 

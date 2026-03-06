@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types as mt
 import pytest
-from pydantic import AnyUrl
-
+from fastmcp.prompts.prompt import Prompt
+from fastmcp.resources.resource import Resource
 from fastmcp.tools.tool import Tool, ToolResult
-from fastmcp.resources.resource import Resource, ResourceResult
-from fastmcp.prompts.prompt import Prompt, PromptResult
 from mcp import McpError
+from pydantic import AnyUrl
 
 from mcp_proxy.config.schema import (
     FilterPluginConfig,
@@ -25,7 +21,6 @@ from mcp_proxy.plugins.base import PluginBase
 from mcp_proxy.plugins.filter_plugin import FilterPlugin
 from mcp_proxy.plugins.logging_plugin import JsonlLoggingPlugin
 from mcp_proxy.plugins.rewrite_plugin import RewritePlugin
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -193,9 +188,7 @@ async def test_rewrite_arg_overrides_win():
 
 @pytest.mark.asyncio
 async def test_rewrite_response_prefix():
-    plugin = RewritePlugin(
-        RewritePluginConfig(type="rewrite", response_prefix="Info: ")
-    )
+    plugin = RewritePlugin(RewritePluginConfig(type="rewrite", response_prefix="Info: "))
     params = make_call_params("tool")
     result = make_tool_result("hello world")
     modified = await plugin.on_call_tool_response(params, result)
@@ -218,9 +211,7 @@ async def test_rewrite_no_rename_passthrough():
 @pytest.mark.asyncio
 async def test_logging_writes_request_and_response(tmp_path):
     log_file = tmp_path / "test.jsonl"
-    plugin = JsonlLoggingPlugin(
-        LoggingPluginConfig(type="logging", log_file=str(log_file))
-    )
+    plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))
 
     params = make_call_params("my_tool", {"arg": "val"})
     params = await plugin.on_call_tool_request(params)
@@ -249,9 +240,7 @@ async def test_logging_writes_request_and_response(tmp_path):
 async def test_logging_excludes_payloads(tmp_path):
     log_file = tmp_path / "test.jsonl"
     plugin = JsonlLoggingPlugin(
-        LoggingPluginConfig(
-            type="logging", log_file=str(log_file), include_payloads=False
-        )
+        LoggingPluginConfig(type="logging", log_file=str(log_file), include_payloads=False)
     )
 
     params = make_call_params("my_tool", {"secret": "value"})
@@ -288,9 +277,7 @@ async def test_logging_method_filter(tmp_path):
 @pytest.mark.asyncio
 async def test_logging_list_tools(tmp_path):
     log_file = tmp_path / "test.jsonl"
-    plugin = JsonlLoggingPlugin(
-        LoggingPluginConfig(type="logging", log_file=str(log_file))
-    )
+    plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))
 
     tools = [make_tool("foo"), make_tool("bar")]
     result = await plugin.on_list_tools(tools)

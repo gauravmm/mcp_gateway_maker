@@ -36,9 +36,7 @@ class RewritePlugin(PluginBase):
         # upstream_name -> exposed_name  (used in on_list_tools)
         self._upstream_to_exposed: dict[str, str] = dict(config.tool_renames)
         # exposed_name -> upstream_name  (used in on_call_tool_request)
-        self._exposed_to_upstream: dict[str, str] = {
-            v: k for k, v in config.tool_renames.items()
-        }
+        self._exposed_to_upstream: dict[str, str] = {v: k for k, v in config.tool_renames.items()}
         # upstream_name -> {arg: value}
         self._arg_overrides: dict[str, dict[str, Any]] = dict(config.argument_overrides)
         self._response_prefix: str | None = config.response_prefix
@@ -54,9 +52,7 @@ class RewritePlugin(PluginBase):
         overrides = self._arg_overrides.get(upstream_name, {})
         if upstream_name != params.name or overrides:
             new_args: dict[str, Any] = {**(params.arguments or {}), **overrides}
-            return params.model_copy(
-                update={"name": upstream_name, "arguments": new_args or None}
-            )
+            return params.model_copy(update={"name": upstream_name, "arguments": new_args or None})
         return params
 
     async def on_call_tool_response(
@@ -70,9 +66,7 @@ class RewritePlugin(PluginBase):
         for block in result.content:
             if hasattr(block, "text") and isinstance(block.text, str):
                 new_content.append(
-                    block.model_copy(
-                        update={"text": self._response_prefix + block.text}
-                    )
+                    block.model_copy(update={"text": self._response_prefix + block.text})
                 )
             else:
                 new_content.append(block)

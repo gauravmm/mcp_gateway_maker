@@ -2,23 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import textwrap
 from pathlib import Path
 
 import pytest
-import yaml
 
-from mcp_proxy.config.loader import load_config, _expand_env_vars
+from mcp_proxy.config.loader import _expand_env_vars, load_config
 from mcp_proxy.config.schema import (
     FilterPluginConfig,
     HttpTransportConfig,
     LoggingPluginConfig,
-    ProxyConfig,
     RewritePluginConfig,
     StdioTransportConfig,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helper

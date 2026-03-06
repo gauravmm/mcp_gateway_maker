@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,9 +42,7 @@ class JsonlLoggingPlugin(PluginBase):
 
     def __init__(self, config: LoggingPluginConfig) -> None:
         self._include_payloads = config.include_payloads
-        self._methods: set[str] | None = (
-            set(config.methods) if config.methods else None
-        )
+        self._methods: set[str] | None = set(config.methods) if config.methods else None
         path = Path(config.log_file)
         path.parent.mkdir(parents=True, exist_ok=True)
         self._file = open(path, "a", encoding="utf-8")  # noqa: SIM115
@@ -94,16 +91,13 @@ class JsonlLoggingPlugin(PluginBase):
             duration_ms = (time.monotonic() - t0) * 1000 if t0 is not None else None
             entry = self._base("response", "tools/call")
             entry["tool_name"] = params.name
-            entry["is_error"] = any(
-                getattr(b, "type", None) == "error" for b in result.content
-            )
+            entry["is_error"] = any(getattr(b, "type", None) == "error" for b in result.content)
             entry["content_blocks"] = len(result.content)
             entry["content_length_chars"] = _text_length(result.content)
             entry["duration_ms"] = round(duration_ms, 2) if duration_ms else None
             if self._include_payloads:
                 entry["response_payload"] = " ".join(
-                    b.text for b in result.content
-                    if hasattr(b, "text") and isinstance(b.text, str)
+                    b.text for b in result.content if hasattr(b, "text") and isinstance(b.text, str)
                 )
             self._write(entry)
         return result
@@ -149,9 +143,7 @@ class JsonlLoggingPlugin(PluginBase):
         if self._should_log("resources/list"):
             entry = self._base("list", "resources/list")
             entry["item_count"] = len(resources)
-            entry["items"] = (
-                [str(r.uri) for r in resources] if self._include_payloads else None
-            )
+            entry["items"] = [str(r.uri) for r in resources] if self._include_payloads else None
             self._write(entry)
         return resources
 
@@ -189,8 +181,6 @@ class JsonlLoggingPlugin(PluginBase):
         if self._should_log("prompts/list"):
             entry = self._base("list", "prompts/list")
             entry["item_count"] = len(prompts)
-            entry["items"] = (
-                [p.name for p in prompts] if self._include_payloads else None
-            )
+            entry["items"] = [p.name for p in prompts] if self._include_payloads else None
             self._write(entry)
         return prompts

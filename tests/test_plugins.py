@@ -481,6 +481,32 @@ async def test_logging_inline_payload_below_threshold(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_logging_json_payload_unpacked(tmp_path):
+    log_file = tmp_path / "test.jsonl"
+    plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))
+    params = make_call_params("my_tool")
+    params = await plugin.on_call_tool_request(params)
+    result = make_tool_result('{"key": "value", "count": 42}')
+    await plugin.on_call_tool_response(params, result)
+
+    entry = json.loads(log_file.read_text().strip())
+    assert entry["response_payload"] == {"key": "value", "count": 42}
+
+
+@pytest.mark.asyncio
+async def test_logging_non_json_payload_kept_as_string(tmp_path):
+    log_file = tmp_path / "test.jsonl"
+    plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))
+    params = make_call_params("my_tool")
+    params = await plugin.on_call_tool_request(params)
+    result = make_tool_result("plain text response")
+    await plugin.on_call_tool_response(params, result)
+
+    entry = json.loads(log_file.read_text().strip())
+    assert entry["response_payload"] == "plain text response"
+
+
+@pytest.mark.asyncio
 async def test_logging_binary_omitted_by_default(tmp_path):
     log_file = tmp_path / "test.jsonl"
     plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))

@@ -199,7 +199,10 @@ class JsonlLoggingPlugin(PluginBase):
                     ):
                         entry["payload_file"] = self._offload_text(text_payload, params.name)
                     else:
-                        entry["response_payload"] = text_payload
+                        try:
+                            entry["response_payload"] = json.loads(text_payload)
+                        except (json.JSONDecodeError, ValueError):
+                            entry["response_payload"] = text_payload
 
             self._write(entry)
         return result

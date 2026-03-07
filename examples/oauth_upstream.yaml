@@ -1,0 +1,33 @@
+# Example: OAuth2-authenticated upstream MCP servers.
+#
+# When `oauth:` is present, the proxy uses FastMCP's built-in OAuth flow:
+#   - Browser opens for authorization on first run
+#   - Tokens are persisted to .oauth2/<upstream-name>/ (survives restarts)
+#   - Access tokens are refreshed automatically
+#
+# `client_id` / `client_secret` skip Dynamic Client Registration (DCR).
+# Omit them to use DCR (server registers the client automatically).
+# Supports ${ENV_VAR} expansion in all string fields.
+
+proxy:
+  name: mcp-proxy
+  transport: stdio
+
+upstreams:
+  # Pre-registered client (no DCR):
+  - name: notion
+    transport:
+      type: http
+      url: "https://mcp.notion.com/mcp"
+      oauth:
+        client_id: "${NOTION_CLIENT_ID}"
+        client_secret: "${NOTION_CLIENT_SECRET}"
+        scopes:
+          - mcp
+
+  # DCR-only (server registers client automatically):
+  - name: example
+    transport:
+      type: http
+      url: "https://example.com/mcp"
+      oauth: {}

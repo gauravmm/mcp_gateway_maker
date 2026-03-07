@@ -19,10 +19,17 @@ class StdioTransportConfig(BaseModel):
     cwd: str | None = None
 
 
+class OAuthConfig(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+    scopes: list[str] | None = None
+
+
 class HttpTransportConfig(BaseModel):
     type: Literal["http"]
     url: str
     headers: dict[str, str] = {}
+    oauth: OAuthConfig | None = None
 
 
 TransportConfig = Annotated[

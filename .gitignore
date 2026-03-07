@@ -1,5 +1,6 @@
 old-*
-.env
+.env*
+.oauth2/
 logs/
 workspace/
 

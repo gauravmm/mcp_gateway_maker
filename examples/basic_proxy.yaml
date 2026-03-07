@@ -8,11 +8,16 @@
 
 proxy:
   name: basic-proxy
-  transport: stdio
+  transport: streamable-http
+
+global_plugins:
+  - type: logging
+    log_file: logs/audit.jsonl
+    include_payloads: true
 
 upstreams:
-  - name: backend
+  - name: tools
     transport:
       type: stdio
-      command: python
-      args: ["-m", "some_mcp_server"]
+      command: uvx
+      args: ["mcp-server-fetch"]

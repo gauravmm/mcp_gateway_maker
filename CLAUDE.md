@@ -30,11 +30,13 @@ tests/                  # test_config.py, test_plugins.py
 ## Architecture
 
 **fastmcp** (3.1+, Python 3.14) handles the MCP protocol. The proxy uses:
+
 - `create_proxy(transport)` — creates a FastMCP sub-server that proxies an upstream
 - `main.mount(sub, namespace=...)` — aggregates sub-servers into one endpoint
 - `Middleware` subclass with hooks per MCP method
 
 **Plugin system:**
+
 - `PluginBase` — base class; all hooks are pass-through by default
 - `PluginChainMiddleware(plugins)` — a single fastmcp `Middleware` that calls each plugin in order
 - Request hooks run plugin[0] → plugin[1] → ... → upstream
@@ -43,6 +45,7 @@ tests/                  # test_config.py, test_plugins.py
 
 **Middleware context mutation:**
 `MiddlewareContext` is a frozen dataclass. To pass modified params to `call_next`:
+
 ```python
 await call_next(context.copy(message=new_params))
 ```

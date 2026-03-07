@@ -14,14 +14,14 @@
 
 proxy:
   name: secure-proxy
-  transport: stdio
+  transport: http
 
 upstreams:
   - name: tools
     transport:
       type: stdio
       command: uvx
-      args: ["mcp-server-filesystem", "/workspace"]
+      args: ["mcp-server-fetch", "/workspace"]
 
     plugins:
       # 1. Log everything (outermost — sees the original request before rewrites)

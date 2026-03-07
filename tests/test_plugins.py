@@ -13,12 +13,14 @@ from mcp import McpError
 from pydantic import AnyUrl
 
 from mcp_proxy.config.schema import (
+    FetchGuardPluginConfig,
     FilterPluginConfig,
     InventoryPluginConfig,
     LoggingPluginConfig,
     RewritePluginConfig,
 )
 from mcp_proxy.plugins.base import PluginBase
+from mcp_proxy.plugins.fetch_guard_plugin import FetchGuardPlugin
 from mcp_proxy.plugins.filter_plugin import FilterPlugin
 from mcp_proxy.plugins.inventory_plugin import InventoryPlugin
 from mcp_proxy.plugins.logging_plugin import JsonlLoggingPlugin
@@ -400,6 +402,132 @@ async def test_inventory_writes_prompts_snapshot(tmp_path):
     snapshot = json.loads(inv_file.read_text())
     assert len(snapshot["prompts"]) == 2
     assert snapshot["prompts"][0]["name"] == "greeting"
+
+
+# ---------------------------------------------------------------------------
+# FetchGuardPlugin
+# ---------------------------------------------------------------------------
+
+
+def make_fetch_guard() -> FetchGuardPlugin:
+    return FetchGuardPlugin(FetchGuardPluginConfig(type="fetch_guard"))
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_allows_http(monkeypatch):
+    async def mock_resolve(*_):
+        return [(None, None, None, None, ("93.184.216.34", 0))]
+
+    monkeypatch.setattr("mcp_proxy.plugins.fetch_guard_plugin._resolve_host", mock_resolve)
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://example.com"})
+    result = await plugin.on_call_tool_request(params)
+    assert result is params
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_allows_https(monkeypatch):
+    async def mock_resolve(*_):
+        return [(None, None, None, None, ("93.184.216.34", 0))]
+
+    monkeypatch.setattr("mcp_proxy.plugins.fetch_guard_plugin._resolve_host", mock_resolve)
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "https://example.com"})
+    result = await plugin.on_call_tool_request(params)
+    assert result is params
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_file_scheme():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "file:///etc/passwd"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "file://" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_ftp_scheme():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "ftp://example.com/file"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "ftp://" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_loopback_ip():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://127.0.0.1/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "loopback" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_private_ip():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://10.0.0.1/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "private" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_link_local():
+    plugin = make_fetch_guard()
+    # 169.254.169.254 is link-local (AWS metadata endpoint)
+    params = make_call_params("fetch", {"url": "http://169.254.169.254/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "SSRF blocked" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_unspecified():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://0.0.0.0/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "SSRF blocked" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_metadata_hostname():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://metadata.google.internal/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "metadata.google.internal" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_blocks_localhost(monkeypatch):
+    async def mock_resolve(*_):
+        return [(None, None, None, None, ("127.0.0.1", 0))]
+
+    monkeypatch.setattr("mcp_proxy.plugins.fetch_guard_plugin._resolve_host", mock_resolve)
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"url": "http://localhost/"})
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "loopback" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_skips_non_fetch_tool():
+    plugin = make_fetch_guard()
+    params = make_call_params("other_tool", {"url": "file:///etc/passwd"})
+    result = await plugin.on_call_tool_request(params)
+    assert result is params
+
+
+@pytest.mark.asyncio
+async def test_fetch_guard_skips_missing_url_arg():
+    plugin = make_fetch_guard()
+    params = make_call_params("fetch", {"query": "hello"})
+    result = await plugin.on_call_tool_request(params)
+    assert result is params
 
 
 @pytest.mark.asyncio

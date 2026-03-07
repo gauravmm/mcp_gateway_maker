@@ -8,6 +8,7 @@ from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.server import create_proxy
 
 from .config.schema import (
+    FetchGuardPluginConfig,
     FilterPluginConfig,
     HttpTransportConfig,
     InventoryPluginConfig,
@@ -20,6 +21,7 @@ from .config.schema import (
 )
 from .plugins.adapter import PluginChainMiddleware
 from .plugins.base import PluginBase
+from .plugins.fetch_guard_plugin import FetchGuardPlugin
 from .plugins.filter_plugin import FilterPlugin
 from .plugins.inventory_plugin import InventoryPlugin
 from .plugins.logging_plugin import JsonlLoggingPlugin
@@ -35,6 +37,8 @@ def _build_plugin(config: PluginConfig) -> PluginBase:
         return RewritePlugin(config)
     elif isinstance(config, InventoryPluginConfig):
         return InventoryPlugin(config)
+    elif isinstance(config, FetchGuardPluginConfig):
+        return FetchGuardPlugin(config)
     raise ValueError(f"Unknown plugin type: {config.type}")  # type: ignore[union-attr]
 
 

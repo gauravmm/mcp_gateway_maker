@@ -83,8 +83,20 @@ class RewritePluginConfig(BaseModel):
     response_prefix: str | None = None
 
 
+class FetchGuardPluginConfig(BaseModel):
+    type: Literal["fetch_guard"]
+    # Tool names whose URL argument will be inspected (default: the mcp-server-fetch tool)
+    tool_names: list[str] = ["fetch"]
+    # Name of the argument that holds the URL to check
+    url_arg: str = "url"
+
+
 PluginConfig = Annotated[
-    LoggingPluginConfig | FilterPluginConfig | RewritePluginConfig | InventoryPluginConfig,
+    LoggingPluginConfig
+    | FilterPluginConfig
+    | RewritePluginConfig
+    | InventoryPluginConfig
+    | FetchGuardPluginConfig,
     Field(discriminator="type"),
 ]
 

@@ -23,3 +23,9 @@ upstreams:
       type: stdio
       command: uvx
       args: ["mcp-server-fetch"]
+    plugins:
+      - type: fetch_guard
+        # Blocks file://, ftp://, data: schemes and SSRF targets (loopback,
+        # private networks, cloud metadata endpoints).
+        tool_names: ["fetch"]
+        url_arg: url

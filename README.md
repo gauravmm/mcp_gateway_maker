@@ -120,20 +120,21 @@ Appends one JSON line per operation to a file.
 
 **Log entry fields:**
 
+Each call (tool/resource/prompt) is logged as a single paired entry after the response is received, combining request and response data.
+
 | Field | Description |
 |---|---|
-| `schema_version` | Always `1` |
-| `ts` | ISO 8601 UTC timestamp |
-| `event` | `request`, `response`, `list` |
+| `schema_version` | Always `2` |
+| `ts` | ISO 8601 UTC timestamp (of response) |
 | `method` | MCP method (`tools/call`, `resources/read`, etc.) |
 | `tool_name` | Tool name (tool operations only) |
 | `resource_uri` | Resource URI (resource operations only) |
 | `prompt_name` | Prompt name (prompt operations only) |
 | `arguments` | Request arguments (null if `include_payloads: false`) |
-| `is_error` | Whether the response was an error (response only) |
-| `content_blocks` | Number of content blocks in response (response only) |
-| `content_length_chars` | Total text length of response (response only) |
-| `duration_ms` | Round-trip time in milliseconds (response only) |
+| `is_error` | Whether the response was an error (tool calls only) |
+| `content_blocks` | Number of content blocks in response (tool calls only) |
+| `content_length_chars` | Total text length of response (tool calls only) |
+| `duration_ms` | Round-trip time in milliseconds |
 | `items` | List of tool/resource/prompt names (list events only) |
 | `item_count` | Count of items (list events only) |
 

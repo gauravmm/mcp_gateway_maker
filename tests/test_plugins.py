@@ -211,31 +211,29 @@ async def test_rewrite_no_rename_passthrough():
 
 
 @pytest.mark.asyncio
-async def test_logging_writes_request_and_response(tmp_path):
+async def test_logging_writes_paired_entry(tmp_path):
     log_file = tmp_path / "test.jsonl"
     plugin = JsonlLoggingPlugin(LoggingPluginConfig(type="logging", log_file=str(log_file)))
 
     params = make_call_params("my_tool", {"arg": "val"})
     params = await plugin.on_call_tool_request(params)
 
+    # Request hook should not write anything
+    assert not log_file.exists() or log_file.read_text().strip() == ""
+
     result = make_tool_result("done")
     await plugin.on_call_tool_response(params, result)
 
     lines = log_file.read_text().strip().splitlines()
-    assert len(lines) == 2
+    assert len(lines) == 1
 
-    req = json.loads(lines[0])
-    assert req["event"] == "request"
-    assert req["method"] == "tools/call"
-    assert req["tool_name"] == "my_tool"
-    assert req["arguments"] == {"arg": "val"}
-
-    resp = json.loads(lines[1])
-    assert resp["event"] == "response"
-    assert resp["method"] == "tools/call"
-    assert resp["tool_name"] == "my_tool"
-    assert resp["content_blocks"] == 1
-    assert resp["duration_ms"] is not None
+    entry = json.loads(lines[0])
+    assert entry["schema_version"] == 2
+    assert entry["method"] == "tools/call"
+    assert entry["tool_name"] == "my_tool"
+    assert entry["arguments"] == {"arg": "val"}
+    assert entry["content_blocks"] == 1
+    assert entry["duration_ms"] is not None
 
 
 @pytest.mark.asyncio
@@ -247,10 +245,12 @@ async def test_logging_excludes_payloads(tmp_path):
 
     params = make_call_params("my_tool", {"secret": "value"})
     params = await plugin.on_call_tool_request(params)
+    result = make_tool_result("done")
+    await plugin.on_call_tool_response(params, result)
 
     lines = log_file.read_text().strip().splitlines()
-    req = json.loads(lines[0])
-    assert req["arguments"] is None
+    entry = json.loads(lines[0])
+    assert entry["arguments"] is None
 
 
 @pytest.mark.asyncio
@@ -266,7 +266,9 @@ async def test_logging_method_filter(tmp_path):
 
     # tools/call should NOT be logged
     params = make_call_params("my_tool")
-    await plugin.on_call_tool_request(params)
+    params = await plugin.on_call_tool_request(params)
+    result = make_tool_result("done")
+    await plugin.on_call_tool_response(params, result)
     assert not log_file.exists() or log_file.read_text().strip() == ""
 
     # tools/list SHOULD be logged
@@ -287,7 +289,6 @@ async def test_logging_list_tools(tmp_path):
 
     lines = log_file.read_text().strip().splitlines()
     entry = json.loads(lines[0])
-    assert entry["event"] == "list"
     assert entry["item_count"] == 2
     assert entry["items"] == ["foo", "bar"]
 

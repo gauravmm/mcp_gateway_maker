@@ -107,10 +107,12 @@ upstreams:
         inventory_file: str
 ```
 
-## JSONL Log Schema (schema_version: 1)
+## JSONL Log Schema (schema_version: 2)
+
+Calls are logged as a single paired entry after the response is received.
 
 ```
-ts, event (request/response/list), method, tool_name, resource_uri, prompt_name,
+ts, method, tool_name, resource_uri, prompt_name,
 arguments, is_error, content_blocks, content_length_chars, duration_ms, items, item_count
 ```
 

@@ -54,11 +54,10 @@ class JsonlLoggingPlugin(PluginBase):
         self._file.write(json.dumps(entry, default=str) + "\n")
         self._file.flush()
 
-    def _base(self, event: str, method: str) -> dict[str, Any]:
+    def _base(self, method: str) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "ts": _now_iso(),
-            "event": event,
             "method": method,
         }
 
@@ -69,14 +68,7 @@ class JsonlLoggingPlugin(PluginBase):
     async def on_call_tool_request(
         self, params: mt.CallToolRequestParams
     ) -> mt.CallToolRequestParams:
-        if self._should_log("tools/call"):
-            entry = self._base("request", "tools/call")
-            entry["tool_name"] = params.name
-            entry["arguments"] = params.arguments if self._include_payloads else None
-            self._write(entry)
-        # Stash start time as a side-channel for the response hook via a simple
-        # convention: we attach it to the params object's extra fields.
-        # Pydantic models with extra="allow" support arbitrary attribute storage.
+        # Stash start time for duration calculation in the response hook.
         params.__pydantic_extra__ = params.__pydantic_extra__ or {}
         params.__pydantic_extra__["_proxy_t0"] = time.monotonic()
         return params
@@ -89,8 +81,9 @@ class JsonlLoggingPlugin(PluginBase):
         if self._should_log("tools/call"):
             t0 = (params.__pydantic_extra__ or {}).get("_proxy_t0")
             duration_ms = (time.monotonic() - t0) * 1000 if t0 is not None else None
-            entry = self._base("response", "tools/call")
+            entry = self._base("tools/call")
             entry["tool_name"] = params.name
+            entry["arguments"] = params.arguments if self._include_payloads else None
             entry["is_error"] = any(getattr(b, "type", None) == "error" for b in result.content)
             entry["content_blocks"] = len(result.content)
             entry["content_length_chars"] = _text_length(result.content)
@@ -104,7 +97,7 @@ class JsonlLoggingPlugin(PluginBase):
 
     async def on_list_tools(self, tools: list[Tool]) -> list[Tool]:
         if self._should_log("tools/list"):
-            entry = self._base("list", "tools/list")
+            entry = self._base("tools/list")
             entry["item_count"] = len(tools)
             entry["items"] = [t.name for t in tools] if self._include_payloads else None
             self._write(entry)
@@ -117,10 +110,6 @@ class JsonlLoggingPlugin(PluginBase):
     async def on_read_resource_request(
         self, params: mt.ReadResourceRequestParams
     ) -> mt.ReadResourceRequestParams:
-        if self._should_log("resources/read"):
-            entry = self._base("request", "resources/read")
-            entry["resource_uri"] = str(params.uri)
-            self._write(entry)
         params.__pydantic_extra__ = params.__pydantic_extra__ or {}
         params.__pydantic_extra__["_proxy_t0"] = time.monotonic()
         return params
@@ -133,7 +122,7 @@ class JsonlLoggingPlugin(PluginBase):
         if self._should_log("resources/read"):
             t0 = (params.__pydantic_extra__ or {}).get("_proxy_t0")
             duration_ms = (time.monotonic() - t0) * 1000 if t0 is not None else None
-            entry = self._base("response", "resources/read")
+            entry = self._base("resources/read")
             entry["resource_uri"] = str(params.uri)
             entry["duration_ms"] = round(duration_ms, 2) if duration_ms else None
             self._write(entry)
@@ -141,7 +130,7 @@ class JsonlLoggingPlugin(PluginBase):
 
     async def on_list_resources(self, resources: list[Resource]) -> list[Resource]:
         if self._should_log("resources/list"):
-            entry = self._base("list", "resources/list")
+            entry = self._base("resources/list")
             entry["item_count"] = len(resources)
             entry["items"] = [str(r.uri) for r in resources] if self._include_payloads else None
             self._write(entry)
@@ -154,11 +143,6 @@ class JsonlLoggingPlugin(PluginBase):
     async def on_get_prompt_request(
         self, params: mt.GetPromptRequestParams
     ) -> mt.GetPromptRequestParams:
-        if self._should_log("prompts/get"):
-            entry = self._base("request", "prompts/get")
-            entry["prompt_name"] = params.name
-            entry["arguments"] = params.arguments if self._include_payloads else None
-            self._write(entry)
         params.__pydantic_extra__ = params.__pydantic_extra__ or {}
         params.__pydantic_extra__["_proxy_t0"] = time.monotonic()
         return params
@@ -171,15 +155,16 @@ class JsonlLoggingPlugin(PluginBase):
         if self._should_log("prompts/get"):
             t0 = (params.__pydantic_extra__ or {}).get("_proxy_t0")
             duration_ms = (time.monotonic() - t0) * 1000 if t0 is not None else None
-            entry = self._base("response", "prompts/get")
+            entry = self._base("prompts/get")
             entry["prompt_name"] = params.name
+            entry["arguments"] = params.arguments if self._include_payloads else None
             entry["duration_ms"] = round(duration_ms, 2) if duration_ms else None
             self._write(entry)
         return result
 
     async def on_list_prompts(self, prompts: list[Prompt]) -> list[Prompt]:
         if self._should_log("prompts/list"):
-            entry = self._base("list", "prompts/list")
+            entry = self._base("prompts/list")
             entry["item_count"] = len(prompts)
             entry["items"] = [p.name for p in prompts] if self._include_payloads else None
             self._write(entry)

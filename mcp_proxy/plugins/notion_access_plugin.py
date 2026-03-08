@@ -245,6 +245,16 @@ class NotionAccessPlugin(PluginBase):
 
         return params
 
+    def _strip_marker_line(self, content: str) -> str:
+        """Remove a leading permission marker line if the LLM already included one."""
+        if not content:
+            return content
+        first_line, _, rest = content.partition("\n")
+        # Check if the first line looks like a permission marker for any bot
+        if self._read_emoji in first_line or self._write_emoji in first_line:
+            return rest
+        return content
+
     def _handle_create_pages_request(
         self, params: mt.CallToolRequestParams
     ) -> mt.CallToolRequestParams:
@@ -261,7 +271,7 @@ class NotionAccessPlugin(PluginBase):
                 new_pages = []
                 for page in pages:
                     page = dict(page)
-                    content = page.get("content", "")
+                    content = self._strip_marker_line(page.get("content", ""))
                     page["content"] = cached.first_line + "\n" + content
                     new_pages.append(page)
                 args["pages"] = new_pages

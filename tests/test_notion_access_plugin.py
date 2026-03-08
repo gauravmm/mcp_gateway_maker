@@ -329,6 +329,86 @@ async def test_create_pages_inherits_first_line():
 
 
 @pytest.mark.asyncio
+async def test_create_pages_strips_duplicate_marker():
+    """If the LLM already included a marker line, the proxy strips it and uses the parent's."""
+    plugin = _plugin()
+    first_line = f"{BOT} {WRITE_EMOJI}"
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    result = make_result(_notion_page(first_line))
+    await plugin.on_call_tool_response(fetch_params, result)
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "parent": {"page_id": "parent1"},
+            "pages": [
+                {
+                    "properties": {"title": "Child"},
+                    "content": f"{BOT} {WRITE_EMOJI}\nChild body.",
+                },
+            ],
+        },
+    )
+    out = await plugin.on_call_tool_request(create_params)
+    page_content = out.arguments["pages"][0]["content"]
+    # Should have exactly one marker line, not two
+    assert page_content == f"{first_line}\nChild body."
+
+
+@pytest.mark.asyncio
+async def test_create_pages_strips_llm_marker_uses_parent():
+    """If the LLM provides a different marker, the proxy replaces it with the parent's."""
+    plugin = _plugin()
+    parent_line = f"{BOT} {READ_EMOJI}, AdminBot {WRITE_EMOJI}"
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    result = make_result(_notion_page(parent_line))
+    await plugin.on_call_tool_response(fetch_params, result)
+
+    # Fetch again with WRITE to allow creation
+    plugin._cache["parent1"].level = AccessLevel.WRITE
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "parent": {"page_id": "parent1"},
+            "pages": [
+                {
+                    "properties": {"title": "Child"},
+                    # LLM used a different/wrong marker
+                    "content": f"{BOT} {WRITE_EMOJI}\nChild body.",
+                },
+            ],
+        },
+    )
+    out = await plugin.on_call_tool_request(create_params)
+    page_content = out.arguments["pages"][0]["content"]
+    # Should use the parent's marker, not the LLM's
+    assert page_content.startswith(parent_line + "\n")
+    assert "Child body." in page_content
+
+
+@pytest.mark.asyncio
+async def test_create_pages_no_content():
+    """Pages with no content still get the marker line."""
+    plugin = _plugin()
+    first_line = f"{BOT} {WRITE_EMOJI}"
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    result = make_result(_notion_page(first_line))
+    await plugin.on_call_tool_response(fetch_params, result)
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "parent": {"page_id": "parent1"},
+            "pages": [{"properties": {"title": "Empty Child"}}],
+        },
+    )
+    out = await plugin.on_call_tool_request(create_params)
+    page_content = out.arguments["pages"][0]["content"]
+    assert page_content == f"{first_line}\n"
+
+
+@pytest.mark.asyncio
 async def test_create_pages_without_parent_blocked():
     plugin = _plugin(allow_workspace_creation=False)
     create_params = make_call(

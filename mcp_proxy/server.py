@@ -50,6 +50,7 @@ def _build_oauth(cfg: OAuthConfig, upstream_name: str) -> OAuth:
         client_secret=cfg.client_secret,
         scopes=cfg.scopes,
         token_storage=store,
+        callback_port=cfg.callback_port or 53997,
     )
 
 

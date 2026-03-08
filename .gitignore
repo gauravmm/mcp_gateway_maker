@@ -1,4 +1,7 @@
-logs/
+benchclaw.yaml
+logs*/
+.env*
+.oauth2/
 workspace/
 
 # Byte-compiled / optimized / DLL files

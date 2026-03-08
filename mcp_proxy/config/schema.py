@@ -19,10 +19,17 @@ class StdioTransportConfig(BaseModel):
     cwd: str | None = None
 
 
+class OAuthConfig(BaseModel):
+    client_id: str | None = None
+    client_secret: str | None = None
+    scopes: list[str] | None = None
+
+
 class HttpTransportConfig(BaseModel):
     type: Literal["http"]
     url: str
     headers: dict[str, str] = {}
+    oauth: OAuthConfig | None = None
 
 
 TransportConfig = Annotated[
@@ -90,8 +97,22 @@ class RewritePluginConfig(BaseModel):
     response_prefix: str | None = None
 
 
+class NotionAccessPluginConfig(BaseModel):
+    type: Literal["notion_access"]
+    bot_name: str
+    read_emoji: str = "👀"
+    write_emoji: str = "🖊"
+    cache_ttl_seconds: int = 60
+    allow_workspace_creation: bool = False
+    block_tools: list[str] = ["notion-create-database", "notion-update-data-source"]
+
+
 PluginConfig = Annotated[
-    LoggingPluginConfig | FilterPluginConfig | RewritePluginConfig | InventoryPluginConfig,
+    LoggingPluginConfig
+    | FilterPluginConfig
+    | RewritePluginConfig
+    | InventoryPluginConfig
+    | NotionAccessPluginConfig,
     Field(discriminator="type"),
 ]
 

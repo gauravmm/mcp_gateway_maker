@@ -12,6 +12,7 @@ from mcp_proxy.config.schema import (
     FilterPluginConfig,
     HttpTransportConfig,
     LoggingPluginConfig,
+    OAuthConfig,
     RewritePluginConfig,
     StdioTransportConfig,
 )
@@ -217,6 +218,72 @@ def test_global_plugins(tmp_path):
     config = load_config(p)
     assert len(config.global_plugins) == 1
     assert isinstance(config.global_plugins[0], LoggingPluginConfig)
+
+
+def test_http_upstream_no_oauth(tmp_path):
+    p = write_yaml(
+        tmp_path,
+        """
+        upstreams:
+          - name: remote
+            transport:
+              type: http
+              url: "http://localhost:9000/mcp"
+        """,
+    )
+    config = load_config(p)
+    t = config.upstreams[0].transport
+    assert isinstance(t, HttpTransportConfig)
+    assert t.oauth is None
+
+
+def test_http_upstream_oauth_empty(tmp_path):
+    p = write_yaml(
+        tmp_path,
+        """
+        upstreams:
+          - name: remote
+            transport:
+              type: http
+              url: "http://localhost:9000/mcp"
+              oauth: {}
+        """,
+    )
+    config = load_config(p)
+    t = config.upstreams[0].transport
+    assert isinstance(t, HttpTransportConfig)
+    assert isinstance(t.oauth, OAuthConfig)
+    assert t.oauth.client_id is None
+    assert t.oauth.client_secret is None
+    assert t.oauth.scopes is None
+
+
+def test_http_upstream_oauth_full(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLIENT_ID", "my-id")
+    monkeypatch.setenv("CLIENT_SECRET", "my-secret")
+    p = write_yaml(
+        tmp_path,
+        """
+        upstreams:
+          - name: remote
+            transport:
+              type: http
+              url: "http://localhost:9000/mcp"
+              oauth:
+                client_id: "${CLIENT_ID}"
+                client_secret: "${CLIENT_SECRET}"
+                scopes:
+                  - read
+                  - write
+        """,
+    )
+    config = load_config(p)
+    t = config.upstreams[0].transport
+    assert isinstance(t, HttpTransportConfig)
+    assert isinstance(t.oauth, OAuthConfig)
+    assert t.oauth.client_id == "my-id"
+    assert t.oauth.client_secret == "my-secret"
+    assert t.oauth.scopes == ["read", "write"]
 
 
 def test_namespace(tmp_path):

@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastmcp import FastMCP
+from fastmcp.client.auth import OAuth
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.server import create_proxy
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
 
 from .config.schema import (
     FilterPluginConfig,
     HttpTransportConfig,
     InventoryPluginConfig,
     LoggingPluginConfig,
+    NotionAccessPluginConfig,
+    OAuthConfig,
     PluginConfig,
     ProxyConfig,
     RewritePluginConfig,
@@ -23,7 +33,24 @@ from .plugins.base import PluginBase
 from .plugins.filter_plugin import FilterPlugin
 from .plugins.inventory_plugin import InventoryPlugin
 from .plugins.logging_plugin import JsonlLoggingPlugin
+from .plugins.notion_access_plugin import NotionAccessPlugin
 from .plugins.rewrite_plugin import RewritePlugin
+
+
+def _build_oauth(cfg: OAuthConfig, upstream_name: str) -> OAuth:
+    storage_dir = (Path(".oauth2") / upstream_name).resolve()
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    store = FileTreeStore(
+        data_directory=storage_dir,
+        key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(storage_dir),
+        collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(storage_dir),
+    )
+    return OAuth(
+        client_id=cfg.client_id,
+        client_secret=cfg.client_secret,
+        scopes=cfg.scopes,
+        token_storage=store,
+    )
 
 
 def _build_plugin(config: PluginConfig) -> PluginBase:
@@ -35,6 +62,8 @@ def _build_plugin(config: PluginConfig) -> PluginBase:
         return RewritePlugin(config)
     elif isinstance(config, InventoryPluginConfig):
         return InventoryPlugin(config)
+    elif isinstance(config, NotionAccessPluginConfig):
+        return NotionAccessPlugin(config)
     raise ValueError(f"Unknown plugin type: {config.type}")  # type: ignore[union-attr]
 
 
@@ -52,9 +81,11 @@ def _build_transport(upstream: UpstreamConfig) -> StdioTransport | StreamableHtt
             cwd=cfg.cwd,
         )
     elif isinstance(cfg, HttpTransportConfig):
+        auth = _build_oauth(cfg.oauth, upstream.name) if cfg.oauth is not None else None
         return StreamableHttpTransport(
             url=cfg.url,
             headers=cfg.headers or None,
+            auth=auth,
         )
     raise ValueError(f"Unknown transport type: {cfg.type}")  # type: ignore[union-attr]
 

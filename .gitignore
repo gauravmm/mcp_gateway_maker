@@ -2,6 +2,7 @@ benchclaw.yaml
 logs*/
 .env*
 .oauth2/
+.vscode/
 workspace/
 
 # Byte-compiled / optimized / DLL files

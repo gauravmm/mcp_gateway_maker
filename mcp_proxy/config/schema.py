@@ -23,6 +23,7 @@ class OAuthConfig(BaseModel):
     client_id: str | None = None
     client_secret: str | None = None
     scopes: list[str] | None = None
+    callback_port: int | None = None
 
 
 class HttpTransportConfig(BaseModel):

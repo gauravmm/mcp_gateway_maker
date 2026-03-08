@@ -36,8 +36,8 @@ upstreams:
     transport:
       type: http
       url: "https://mcp.notion.com/mcp"
-      headers:
-        Authorization: "Bearer ${NOTION_TOKEN}"
+      oauth: {}
+
     plugins:
       - type: notion_access
         bot_name: OcelliBot            # required: name to look for in markers

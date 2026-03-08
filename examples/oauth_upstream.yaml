@@ -8,6 +8,10 @@
 # `client_id` / `client_secret` skip Dynamic Client Registration (DCR).
 # Omit them to use DCR (server registers the client automatically).
 # Supports ${ENV_VAR} expansion in all string fields.
+#
+# `callback_port`: Fix the local redirect URI port (required by servers like
+#   Notion that validate the exact redirect_uri against pre-registered values).
+#   Register http://localhost:<port>/callback in your OAuth app settings.
 
 proxy:
   name: mcp-proxy
@@ -24,6 +28,7 @@ upstreams:
         client_secret: "${NOTION_CLIENT_SECRET}"
         scopes:
           - mcp
+        callback_port: 54321  # must match redirect_uri registered in Notion
 
   # DCR-only (server registers client automatically):
   - name: example

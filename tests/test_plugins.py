@@ -611,3 +611,148 @@ async def test_logging_rotation_renames_payloads_dir(tmp_path):
     # After rotation, current payloads dir should be renamed to .1
     assert not payloads_dir.exists()
     assert backup1.exists()
+
+
+# ---------------------------------------------------------------------------
+# NotionAccessPlugin — notion_upload_image synthetic tool
+# ---------------------------------------------------------------------------
+
+
+def make_notion_access_plugin(notion_token: str | None = None):
+    from mcp_proxy.config.schema import NotionAccessPluginConfig
+    from mcp_proxy.plugins.notion_access_plugin import NotionAccessPlugin
+
+    return NotionAccessPlugin(
+        NotionAccessPluginConfig(
+            type="notion_access",
+            bot_name="TestBot",
+            notion_token=notion_token,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_image_no_token_emits_warning(caplog):
+    """register_tools logs a warning and does not register the tool when token is absent."""
+    import logging
+
+    from fastmcp import Client, FastMCP
+
+    plugin = make_notion_access_plugin(notion_token=None)
+    server = FastMCP("test")
+
+    with caplog.at_level(logging.WARNING):
+        plugin.register_tools(server)
+
+    assert any("notion_token not configured" in r.message for r in caplog.records)
+    # Tool should not be registered
+    async with Client(server) as client:
+        tools = await client.list_tools()
+    assert "notion_upload_image" not in {t.name for t in tools}
+
+
+@pytest.mark.asyncio
+async def test_upload_image_requires_write_permission(tmp_path):
+    """notion_upload_image raises ToolError if page has no cached WRITE permission."""
+    from fastmcp import Client, FastMCP
+    from fastmcp.exceptions import ToolError
+
+    plugin = make_notion_access_plugin(notion_token="secret-token")
+    server = FastMCP("test")
+    plugin.register_tools(server)
+
+    # Create a dummy image file
+    img = tmp_path / "photo.png"
+    img.write_bytes(b"\x89PNG\r\n")
+
+    # Call the tool without fetching the page first (no cached permission)
+    async with Client(server) as client:
+        with pytest.raises(ToolError, match="not in cache"):
+            await client.call_tool(
+                "notion_upload_image",
+                {"page_id": "page-abc", "file_path": str(img)},
+            )
+
+
+@pytest.mark.asyncio
+async def test_upload_image_success(tmp_path):
+    """notion_upload_image uploads file and inserts image block, replacing the placeholder."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from fastmcp import Client, FastMCP
+
+    from mcp_proxy.plugins.notion_access_plugin import AccessLevel, CachedPermission
+
+    page_id = "page-abc"
+    file_path = tmp_path / "photo.png"
+    file_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    plugin = make_notion_access_plugin(notion_token="tok-123")
+    # Seed the cache with WRITE permission
+    plugin._cache[page_id] = CachedPermission(
+        level=AccessLevel.WRITE,
+        first_line="TestBot 🖊",
+        expires_at=float("inf"),
+    )
+
+    server = FastMCP("test")
+    plugin.register_tools(server)
+
+    placeholder = f"[IMAGE_UPLOAD: {file_path}]"
+    block_id = "blk-xyz"
+
+    # Build mock HTTP responses in order:
+    # GET  /blocks/{page_id}/children → page with placeholder paragraph
+    # POST /file_uploads              → {id, upload_url}
+    # PUT  {upload_url}               → 200
+    # DELETE /blocks/{block_id}       → 200
+    # POST /blocks/{page_id}/children → 200
+    def make_response(json_data=None):
+        r = MagicMock()
+        r.json = MagicMock(return_value=json_data or {})
+        r.raise_for_status = MagicMock()
+        return r
+
+    responses = [
+        make_response(
+            {
+                "results": [
+                    {
+                        "id": block_id,
+                        "type": "paragraph",
+                        "paragraph": {"rich_text": [{"plain_text": placeholder}]},
+                    }
+                ]
+            }
+        ),
+        make_response({"id": "file-id-1", "upload_url": "https://s3.example.com/upload"}),
+        make_response(),
+        make_response(),
+        make_response(),
+    ]
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.get = AsyncMock(return_value=responses[0])
+    mock_client.post = AsyncMock(side_effect=[responses[1], responses[4]])
+    mock_client.put = AsyncMock(return_value=responses[2])
+    mock_client.delete = AsyncMock(return_value=responses[3])
+
+    with patch(
+        "mcp_proxy.plugins.notion_access_plugin.httpx.AsyncClient", return_value=mock_client
+    ):
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "notion_upload_image",
+                {"page_id": page_id, "file_path": str(file_path), "caption": "A test image"},
+            )
+
+    text = result.content[0].text
+    assert "photo.png" in text
+    assert page_id in text
+
+    # Verify delete was called on the placeholder block
+    mock_client.delete.assert_called_once()
+    delete_url = mock_client.delete.call_args[0][0]
+    assert block_id in delete_url

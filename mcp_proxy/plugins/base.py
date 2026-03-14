@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import mcp.types as mt
 from fastmcp.prompts.prompt import Prompt, PromptResult
 from fastmcp.resources.resource import Resource, ResourceResult
 from fastmcp.tools.tool import Tool, ToolResult
+
+if TYPE_CHECKING:
+    from fastmcp import FastMCP
 
 
 class PluginBase:
@@ -89,3 +94,14 @@ class PluginBase:
     async def on_list_prompts(self, prompts: list[Prompt]) -> list[Prompt]:
         """Called with the prompt list returned by the upstream server."""
         return prompts
+
+    # ------------------------------------------------------------------
+    # Server registration hook
+    # ------------------------------------------------------------------
+
+    def register_tools(self, server: FastMCP) -> None:  # noqa: F821
+        """Register synthetic tools on the aggregator server.
+
+        Called once at startup for each plugin. No-op by default.
+        Subclasses override this to add tools that are not proxied from upstream.
+        """

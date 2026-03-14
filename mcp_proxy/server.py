@@ -68,10 +68,6 @@ def _build_plugin(config: PluginConfig) -> PluginBase:
     raise ValueError(f"Unknown plugin type: {config.type}")  # type: ignore[union-attr]
 
 
-def _build_plugin_chain(configs: list[PluginConfig]) -> PluginChainMiddleware:
-    return PluginChainMiddleware([_build_plugin(c) for c in configs])
-
-
 def _build_transport(upstream: UpstreamConfig) -> StdioTransport | StreamableHttpTransport:
     cfg = upstream.transport
     if isinstance(cfg, StdioTransportConfig):
@@ -100,18 +96,26 @@ def build_server(config: ProxyConfig) -> FastMCP:
     - Each upstream gets its own proxy sub-server (via ``create_proxy``).
     - Per-upstream plugins are attached to the sub-server before mounting.
     - Sub-servers are mounted onto the aggregator with their configured namespace.
+    - After building the chain, each plugin's ``register_tools`` is called on the
+      aggregator so plugins can inject synthetic tools alongside the proxied ones.
     """
     main = FastMCP(config.proxy.name)
 
     if config.global_plugins:
-        main.add_middleware(_build_plugin_chain(config.global_plugins))
+        plugins = [_build_plugin(c) for c in config.global_plugins]
+        main.add_middleware(PluginChainMiddleware(plugins))
+        for p in plugins:
+            p.register_tools(main)
 
     for upstream in config.upstreams:
         transport = _build_transport(upstream)
         sub = create_proxy(transport, name=upstream.name)
 
         if upstream.plugins:
-            sub.add_middleware(_build_plugin_chain(upstream.plugins))
+            plugins = [_build_plugin(c) for c in upstream.plugins]
+            sub.add_middleware(PluginChainMiddleware(plugins))
+            for p in plugins:
+                p.register_tools(main)
 
         main.mount(sub, namespace=upstream.namespace)
 

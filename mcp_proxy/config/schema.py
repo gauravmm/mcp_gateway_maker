@@ -106,6 +106,7 @@ class NotionAccessPluginConfig(BaseModel):
     cache_ttl_seconds: int = 60
     allow_workspace_creation: bool = False
     block_tools: list[str] = ["notion-create-database", "notion-update-data-source"]
+    notion_token: str | None = None
 
 
 PluginConfig = Annotated[

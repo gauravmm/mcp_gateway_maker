@@ -94,6 +94,65 @@ Permissions are cached in memory keyed by page ID, with a configurable TTL (defa
 - Changes to permission markers in Notion take effect within `cache_ttl_seconds`.
 - There is no persistence across proxy restarts; all pages must be re-fetched.
 
+## Uploading images (`notion_upload_image`)
+
+The plugin registers a synthetic `notion_upload_image` tool when `notion_token` is set in the config. This tool uploads a local image file to Notion and replaces a placeholder text block with a proper image block.
+
+### Why a placeholder?
+
+The Notion MCP server has no native file-upload tool. The two-step placeholder approach works around this: you first insert a sentinel text block (using `notion-update-page`), then call `notion_upload_image`, which finds that block, uploads the file directly to the Notion API, removes the placeholder, and inserts an image block in its place.
+
+### Configuring the plugin extension
+
+Add `notion_token` to the plugin config. This must be a Notion internal integration token with access to the target workspace — it is used for direct Notion API calls that the MCP server cannot handle.
+
+```yaml
+plugins:
+  - type: notion_access
+    bot_name: OcelliBot
+    notion_token: "${NOTION_TOKEN}"   # internal integration bearer token
+    # ... other fields
+```
+
+### Usage
+
+1. **Fetch the page** to confirm write access is cached:
+
+   ```
+   notion-fetch  →  page_id: <your-page-id>
+   ```
+
+2. **Insert the placeholder** using `notion-update-page`. The placeholder format is `[IMAGE_UPLOAD: /absolute/path/to/file.png]`:
+
+   ```
+   notion-update-page  →  command: update_content
+                          content_updates: [{old_str: "...", new_str: "...\n[IMAGE_UPLOAD: /home/user/poster.png]"}]
+   ```
+
+3. **Upload the image**:
+
+   ```
+   notion_upload_image  →  page_id: <your-page-id>
+                           file_path: /home/user/poster.png
+                           caption: "Optional caption"   # optional
+   ```
+
+   The tool will:
+   - Locate the `[IMAGE_UPLOAD: ...]` paragraph block on the page
+   - Create a Notion file upload session and upload the file
+   - Delete the placeholder block
+   - Append an image block at the same position
+
+### Tool parameters
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `page_id` | Yes | ID of the Notion page (with or without dashes). |
+| `file_path` | Yes | Absolute path to the local image file. |
+| `caption` | No | Caption text for the image block. |
+
+The tool requires WRITE access on the target page (confirmed via the fetch-and-cache mechanism). If the placeholder is not found on the page, the call fails with an error — insert the placeholder with `notion-update-page` before calling this tool.
+
 ## Example workflow
 
 A typical interaction looks like this:

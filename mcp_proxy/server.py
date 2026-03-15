@@ -21,6 +21,7 @@ from key_value.aio.stores.filetree import (
 
 from .config.schema import (
     FilterPluginConfig,
+    HiveAccessPluginConfig,
     HttpTransportConfig,
     InventoryPluginConfig,
     LoggingPluginConfig,
@@ -35,6 +36,7 @@ from .config.schema import (
 from .plugins.adapter import PluginChainMiddleware
 from .plugins.base import PluginBase
 from .plugins.filter_plugin import FilterPlugin
+from .plugins.hive_access_plugin import HiveAccessPlugin
 from .plugins.inventory_plugin import InventoryPlugin
 from .plugins.logging_plugin import JsonlLoggingPlugin
 from .plugins.notion_access_plugin import NotionAccessPlugin
@@ -69,6 +71,8 @@ def _build_plugin(config: PluginConfig) -> PluginBase:
         return InventoryPlugin(config)
     elif isinstance(config, NotionAccessPluginConfig):
         return NotionAccessPlugin(config)
+    elif isinstance(config, HiveAccessPluginConfig):
+        return HiveAccessPlugin(config)
     raise ValueError(f"Unknown plugin type: {config.type}")  # type: ignore[union-attr]
 
 
@@ -149,7 +153,10 @@ def build_server(
         if upstream.plugins:
             plugins = [_build_plugin(c) for c in upstream.plugins]
             sub.add_middleware(PluginChainMiddleware(plugins))
+            client = connected_clients.get(upstream.name) if connected_clients else None
             for p in plugins:
+                if client is not None:
+                    p.set_upstream_client(client)
                 p.register_tools(main)
 
         main.mount(sub, namespace=upstream.namespace)

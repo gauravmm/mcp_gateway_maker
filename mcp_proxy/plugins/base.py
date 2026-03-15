@@ -136,3 +136,10 @@ class PluginBase:
         Called once at startup for each plugin. No-op by default.
         Subclasses override this to add tools that are not proxied from upstream.
         """
+
+    def set_upstream_client(self, client: object) -> None:
+        """Called by the server to provide a connected upstream client.
+
+        Plugins that need to make out-of-band upstream calls (e.g. to verify
+        ownership of resource IDs) store the client here. No-op by default.
+        """

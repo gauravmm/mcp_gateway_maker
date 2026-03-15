@@ -116,12 +116,22 @@ class NotionAccessPluginConfig(BaseModel):
     hide_blocked: bool = True
 
 
+class HiveAccessPluginConfig(BaseModel):
+    type: Literal["hive_access"]
+    workspace_id: str
+    # Agent may request a subset of these; it may never widen beyond this list.
+    allowed_project_ids: list[str]
+    # When True (default), blocked tools are hidden from list responses.
+    hide_blocked: bool = True
+
+
 PluginConfig = Annotated[
     LoggingPluginConfig
     | FilterPluginConfig
     | RewritePluginConfig
     | InventoryPluginConfig
-    | NotionAccessPluginConfig,
+    | NotionAccessPluginConfig
+    | HiveAccessPluginConfig,
     Field(discriminator="type"),
 ]
 

@@ -153,6 +153,7 @@ class NotionAccessPlugin(PluginBase):
         self._block_tools = set(config.block_tools)
         self._cache: dict[str, CachedPermission] = {}
         self._notion_token = config.notion_token
+        self.hide_blocked = config.hide_blocked
 
     # ------------------------------------------------------------------
     # Cache helpers
@@ -201,11 +202,20 @@ class NotionAccessPlugin(PluginBase):
         return entry
 
     # ------------------------------------------------------------------
-    # on_list_tools: remove blocked tools
+    # Visibility helper
+    # ------------------------------------------------------------------
+
+    def is_tool_allowed(self, name: str) -> bool:
+        return name not in self._block_tools
+
+    # ------------------------------------------------------------------
+    # on_list_tools: remove blocked tools (when hide_blocked is True)
     # ------------------------------------------------------------------
 
     async def on_list_tools(self, tools: list[Tool]) -> list[Tool]:
-        return [t for t in tools if t.name not in self._block_tools]
+        if not self.hide_blocked:
+            return tools
+        return [t for t in tools if self.is_tool_allowed(t.name)]
 
     # ------------------------------------------------------------------
     # on_call_tool_request: route per tool

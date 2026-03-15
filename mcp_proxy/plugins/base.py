@@ -20,7 +20,38 @@ class PluginBase:
     what they need to inspect or modify.
 
     To block an operation, raise ``mcp.McpError`` from any request hook.
+
+    **Hiding blocked items from listings:**
+
+    Set ``hide_blocked = True`` (the default) and override ``is_tool_allowed``,
+    ``is_resource_allowed``, and/or ``is_prompt_allowed``.  The adapter will
+    automatically filter listing responses using these methods so you only need
+    to implement the policy in one place instead of duplicating it across both
+    the request hook and ``on_list_*``.
+
+    Set ``hide_blocked = False`` if you want blocked items to remain visible in
+    listings (e.g. for operator transparency / debugging).
     """
+
+    #: When True, items for which ``is_*_allowed`` returns False are removed
+    #: from listing responses by the adapter.
+    hide_blocked: bool = True
+
+    # ------------------------------------------------------------------
+    # Visibility helpers (override to declare blocking policy)
+    # ------------------------------------------------------------------
+
+    def is_tool_allowed(self, name: str) -> bool:
+        """Return False to block *and* (when hide_blocked=True) hide this tool."""
+        return True
+
+    def is_resource_allowed(self, uri: str) -> bool:
+        """Return False to block *and* (when hide_blocked=True) hide this resource."""
+        return True
+
+    def is_prompt_allowed(self, name: str) -> bool:
+        """Return False to block *and* (when hide_blocked=True) hide this prompt."""
+        return True
 
     # ------------------------------------------------------------------
     # Tool hooks

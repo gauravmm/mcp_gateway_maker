@@ -137,6 +137,99 @@ async def test_filter_block_resources():
 
 
 # ---------------------------------------------------------------------------
+# FilterPlugin — hide_blocked
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_filter_hide_blocked_true_hides_from_list():
+    """Default: blocked tools are hidden from on_list_tools."""
+    plugin = FilterPlugin(FilterPluginConfig(type="filter", block_tools=["write_*"]))
+    assert plugin.hide_blocked is True
+    tools = [make_tool("read_file"), make_tool("write_file")]
+    result = await plugin.on_list_tools(tools)
+    assert [t.name for t in result] == ["read_file"]
+
+
+@pytest.mark.asyncio
+async def test_filter_hide_blocked_false_shows_in_list():
+    """hide_blocked=False: blocked tools appear in listings, calls still raise."""
+    plugin = FilterPlugin(
+        FilterPluginConfig(type="filter", block_tools=["write_*"], hide_blocked=False)
+    )
+    assert plugin.hide_blocked is False
+
+    # on_list_tools should NOT filter
+    tools = [make_tool("read_file"), make_tool("write_file")]
+    result = await plugin.on_list_tools(tools)
+    assert [t.name for t in result] == ["read_file", "write_file"]
+
+    # on_call_tool_request should still block
+    with pytest.raises(McpError):
+        await plugin.on_call_tool_request(make_call_params("write_file"))
+
+
+@pytest.mark.asyncio
+async def test_filter_hide_blocked_false_resources():
+    """hide_blocked=False: blocked resources appear in listings."""
+    plugin = FilterPlugin(
+        FilterPluginConfig(type="filter", block_resources=["file:///secret/*"], hide_blocked=False)
+    )
+    resources = [make_resource("file:///secret/key"), make_resource("file:///public/readme")]
+    result = await plugin.on_list_resources(resources)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_filter_hide_blocked_false_prompts():
+    """hide_blocked=False: blocked prompts appear in listings."""
+    plugin = FilterPlugin(
+        FilterPluginConfig(type="filter", block_prompts=["admin_*"], hide_blocked=False)
+    )
+    prompts = [make_prompt("admin_reset"), make_prompt("greeting")]
+    result = await plugin.on_list_prompts(prompts)
+    assert [p.name for p in result] == ["admin_reset", "greeting"]
+
+
+def test_filter_is_tool_allowed_block():
+    plugin = FilterPlugin(FilterPluginConfig(type="filter", block_tools=["write_*", "delete_*"]))
+    assert plugin.is_tool_allowed("read_file") is True
+    assert plugin.is_tool_allowed("write_file") is False
+    assert plugin.is_tool_allowed("delete_dir") is False
+
+
+def test_filter_is_tool_allowed_allow():
+    plugin = FilterPlugin(FilterPluginConfig(type="filter", allow_tools=["read_*"]))
+    assert plugin.is_tool_allowed("read_file") is True
+    assert plugin.is_tool_allowed("write_file") is False
+
+
+def test_filter_is_resource_allowed():
+    plugin = FilterPlugin(FilterPluginConfig(type="filter", block_resources=["file:///secret/*"]))
+    assert plugin.is_resource_allowed("file:///public/readme") is True
+    assert plugin.is_resource_allowed("file:///secret/key") is False
+
+
+def test_filter_is_prompt_allowed():
+    plugin = FilterPlugin(FilterPluginConfig(type="filter", allow_prompts=["greet_*"]))
+    assert plugin.is_prompt_allowed("greet_user") is True
+    assert plugin.is_prompt_allowed("admin_reset") is False
+
+
+# ---------------------------------------------------------------------------
+# PluginBase — hide_blocked defaults
+# ---------------------------------------------------------------------------
+
+
+def test_plugin_base_hide_blocked_default():
+    plugin = PluginBase()
+    assert plugin.hide_blocked is True
+    assert plugin.is_tool_allowed("anything") is True
+    assert plugin.is_resource_allowed("file:///anything") is True
+    assert plugin.is_prompt_allowed("anything") is True
+
+
+# ---------------------------------------------------------------------------
 # RewritePlugin
 # ---------------------------------------------------------------------------
 

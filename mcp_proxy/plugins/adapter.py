@@ -62,6 +62,8 @@ class PluginChainMiddleware(Middleware):
         tools = list(await call_next(context))
         for plugin in self._plugins:
             tools = await plugin.on_list_tools(tools)
+            if plugin.hide_blocked:
+                tools = [t for t in tools if plugin.is_tool_allowed(t.name)]
         return tools
 
     # ------------------------------------------------------------------
@@ -89,6 +91,8 @@ class PluginChainMiddleware(Middleware):
         resources = list(await call_next(context))
         for plugin in self._plugins:
             resources = await plugin.on_list_resources(resources)
+            if plugin.hide_blocked:
+                resources = [r for r in resources if plugin.is_resource_allowed(str(r.uri))]
         return resources
 
     # ------------------------------------------------------------------
@@ -116,4 +120,6 @@ class PluginChainMiddleware(Middleware):
         prompts = list(await call_next(context))
         for plugin in self._plugins:
             prompts = await plugin.on_list_prompts(prompts)
+            if plugin.hide_blocked:
+                prompts = [p for p in prompts if plugin.is_prompt_allowed(p.name)]
         return prompts

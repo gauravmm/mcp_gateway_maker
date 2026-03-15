@@ -54,6 +54,20 @@ class FilterPlugin(PluginBase):
         self._resource_block = config.block_resources
         self._prompt_allow = config.allow_prompts
         self._prompt_block = config.block_prompts
+        self.hide_blocked = config.hide_blocked
+
+    # ------------------------------------------------------------------
+    # Visibility helpers
+    # ------------------------------------------------------------------
+
+    def is_tool_allowed(self, name: str) -> bool:
+        return _is_allowed(name, self._tool_allow, self._tool_block)
+
+    def is_resource_allowed(self, uri: str) -> bool:
+        return _is_allowed(uri, self._resource_allow, self._resource_block)
+
+    def is_prompt_allowed(self, name: str) -> bool:
+        return _is_allowed(name, self._prompt_allow, self._prompt_block)
 
     # ------------------------------------------------------------------
     # Tools
@@ -62,7 +76,7 @@ class FilterPlugin(PluginBase):
     async def on_call_tool_request(
         self, params: mt.CallToolRequestParams
     ) -> mt.CallToolRequestParams:
-        if not _is_allowed(params.name, self._tool_allow, self._tool_block):
+        if not self.is_tool_allowed(params.name):
             raise McpError(
                 ErrorData(
                     code=_ERR_NOT_FOUND,
@@ -72,7 +86,9 @@ class FilterPlugin(PluginBase):
         return params
 
     async def on_list_tools(self, tools: list[Tool]) -> list[Tool]:
-        return [t for t in tools if _is_allowed(t.name, self._tool_allow, self._tool_block)]
+        if not self.hide_blocked:
+            return tools
+        return [t for t in tools if self.is_tool_allowed(t.name)]
 
     # ------------------------------------------------------------------
     # Resources
@@ -82,7 +98,7 @@ class FilterPlugin(PluginBase):
         self, params: mt.ReadResourceRequestParams
     ) -> mt.ReadResourceRequestParams:
         uri = str(params.uri)
-        if not _is_allowed(uri, self._resource_allow, self._resource_block):
+        if not self.is_resource_allowed(uri):
             raise McpError(
                 ErrorData(
                     code=_ERR_NOT_FOUND,
@@ -92,11 +108,9 @@ class FilterPlugin(PluginBase):
         return params
 
     async def on_list_resources(self, resources: list[Resource]) -> list[Resource]:
-        return [
-            r
-            for r in resources
-            if _is_allowed(str(r.uri), self._resource_allow, self._resource_block)
-        ]
+        if not self.hide_blocked:
+            return resources
+        return [r for r in resources if self.is_resource_allowed(str(r.uri))]
 
     # ------------------------------------------------------------------
     # Prompts
@@ -105,7 +119,7 @@ class FilterPlugin(PluginBase):
     async def on_get_prompt_request(
         self, params: mt.GetPromptRequestParams
     ) -> mt.GetPromptRequestParams:
-        if not _is_allowed(params.name, self._prompt_allow, self._prompt_block):
+        if not self.is_prompt_allowed(params.name):
             raise McpError(
                 ErrorData(
                     code=_ERR_NOT_FOUND,
@@ -115,4 +129,6 @@ class FilterPlugin(PluginBase):
         return params
 
     async def on_list_prompts(self, prompts: list[Prompt]) -> list[Prompt]:
-        return [p for p in prompts if _is_allowed(p.name, self._prompt_allow, self._prompt_block)]
+        if not self.hide_blocked:
+            return prompts
+        return [p for p in prompts if self.is_prompt_allowed(p.name)]

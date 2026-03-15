@@ -72,6 +72,9 @@ class FilterPluginConfig(BaseModel):
     block_resources: list[str] | None = None
     allow_prompts: list[str] | None = None
     block_prompts: list[str] | None = None
+    # When True (default), blocked items are hidden from list responses.
+    # When False, blocked items appear in listings but calls are still rejected.
+    hide_blocked: bool = True
 
     @model_validator(mode="after")
     def _check_allow_block_exclusive(self) -> FilterPluginConfig:
@@ -108,6 +111,9 @@ class NotionAccessPluginConfig(BaseModel):
     allow_workspace_creation: bool = False
     block_tools: list[str] = ["notion-create-database", "notion-update-data-source"]
     notion_token: str | None = None
+    # When True (default), blocked tools are hidden from list responses.
+    # When False, blocked tools appear in listings but calls are still rejected.
+    hide_blocked: bool = True
 
 
 PluginConfig = Annotated[

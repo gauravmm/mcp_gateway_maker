@@ -57,6 +57,7 @@ tests/                  # test_config.py, test_plugins.py
 - Request hooks run plugin[0] → plugin[1] → ... → upstream
 - Response hooks run plugin[0] → plugin[1] → ... (same forward order)
 - Blocking: raise `McpError(ErrorData(code=-32601, message="..."))` from any request hook
+- Hiding: set `hide_blocked = True` (default) and override `is_tool_allowed` / `is_resource_allowed` / `is_prompt_allowed`; the adapter auto-filters list responses so you only declare the policy once
 
 **Middleware context mutation:**
 `MiddlewareContext` is a frozen dataclass. To pass modified params to `call_next`:
@@ -115,6 +116,7 @@ upstreams:
         block_resources: [str] | null
         allow_prompts: [str] | null
         block_prompts: [str] | null
+        hide_blocked: bool           # default: true — hide blocked items from list responses
       - type: rewrite
         tool_renames: {upstream_name: exposed_name}
         argument_overrides: {upstream_name: {arg: value}}
@@ -157,3 +159,4 @@ For Level 3, Claude writes the full plugin: config model in `schema.py`, plugin 
 - Namespace separator is `_` (e.g. namespace `fs` + tool `read_file` → `fs_read_file`)
 - Log files are opened in append mode at startup
 - Log rotation is opt-in via `max_bytes`; backups use numeric suffixes (`.1`, `.2`, ...)
+- `hide_blocked: true` (default) removes blocked items from `list_tools/resources/prompts`; set `false` for transparency (items visible in listings but calls still rejected)

@@ -5,7 +5,7 @@ description: Work with Notion pages via the access-controlled MCP proxy. Covers 
 
 # Use Notion via MCP Proxy
 
-Work with Notion pages through the access-controlled MCP proxy. Always follow the fetch-then-act pattern: fetch a page before any write operation.
+Work with Notion pages through the access-controlled MCP proxy. The proxy automatically checks and caches page permissions — you do not need to fetch a page before writing to it.
 
 ## Instructions
 
@@ -14,7 +14,8 @@ Work with Notion pages through the access-controlled MCP proxy. Always follow th
 Fetch a page by URL or ID:
 
 ```
-notion-fetch  →  id: "https://www.notion.so/My-Page-abc123"
+notion-fetch
+  id: "https://www.notion.so/My-Page-abc123"
 ```
 
 The proxy checks the page's first line for a permission marker (`BotName 🖊` for read-write, `BotName 👀` for read-only). If your bot is not listed, the response is replaced with an access denied error. On success, the permission is cached for subsequent operations.
@@ -22,66 +23,65 @@ The proxy checks the page's first line for a permission marker (`BotName 🖊` f
 Search across the workspace without needing to fetch first:
 
 ```
-notion-search  →  query: "..."
+notion-search
+  query: "..."
 ```
 
 ### Writing pages
 
-Always fetch the page first to establish write permission in the cache, then update.
-
 **Edit specific content** (preferred — surgical, safe):
 
 ```
-notion-update-page  →  page_id: "..."
-                        command: update_content
-                        content_updates: [
-                          { old_str: "old text", new_str: "new text" }
-                        ]
+notion-update-page
+  page_id: "..."
+  command: update_content
+  content_updates: [{ old_str: "old text", new_str: "new text" }]
 ```
 
 **Replace entire content** (the proxy automatically re-prepends the permission marker line):
 
 ```
-notion-update-page  →  page_id: "..."
-                        command: replace_content
-                        new_str: "# New content\n..."
+notion-update-page
+  page_id: "..."
+  command: replace_content
+  new_str: "# New content\n..."
 ```
 
 **Do not edit the first line** of any page — it contains the permission markers and is protected. Any `update_content` operation targeting text from the first line will be blocked.
 
 ### Creating pages
 
-New pages under a parent automatically inherit the parent's permission markers. Fetch the parent first:
+New pages under a parent automatically inherit the parent's permission markers:
 
 ```
-notion-fetch      →  id: "<parent-page-id>"
-notion-create-pages  →  parent: { page_id: "<parent-page-id>" }
-                         ...
+notion-create-pages
+  parent: { page_id: "<parent-page-id>" }
+  ...
 ```
 
 ### Uploading images
 
 The Notion MCP server has no native file-upload capability. Use the two-step placeholder workflow:
 
-**Step 1** — Fetch the target page (establishes write permission), then insert a placeholder using `notion-update-page`:
+**Step 1** — Insert a placeholder using `notion-update-page` (permission is checked automatically):
 
 ```
-notion-update-page  →  page_id: "..."
-                        command: update_content
-                        content_updates: [
-                          {
-                            old_str: "line before image",
-                            new_str: "line before image\n[IMAGE_UPLOAD: /absolute/path/to/image.png]"
-                          }
-                        ]
+notion-update-page
+  page_id: "..."
+  command: update_content
+  content_updates: [{
+    old_str: "line before image",
+    new_str: "line before image\n[IMAGE_UPLOAD: /absolute/path/to/image.png]"
+  }]
 ```
 
 **Step 2** — Upload the image (finds the placeholder, uploads the file, replaces it with an image block):
 
 ```
-notion_upload_image  →  page_id: "..."
-                         file_path: "/absolute/path/to/image.png"
-                         caption: "Optional caption"
+notion_upload_image
+  page_id: "..."
+  file_path: "/absolute/path/to/image.png"
+  caption: "Optional caption"
 ```
 
 The tool handles everything: creates a Notion file upload session, sends the bytes, deletes the placeholder, and appends the image block at the same position.
@@ -115,9 +115,8 @@ Standard Markdown mostly works. Key differences:
 
 #### Common errors
 
-| Error                                              | Cause                                         | Fix                                                           |
-| -------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
-| `[ACCESS DENIED] No permission marker`             | Bot not listed on this page                   | Ask the workspace owner to add `BotName 🖊` to the first line |
-| `[ACCESS DENIED] Page must be fetched first`       | Write attempted without a prior fetch         | Call `notion-fetch` on the page first                         |
-| `[ACCESS DENIED] Cannot modify permission markers` | Edit targeted the first line                  | Adjust `old_str` to not include the first line                |
-| `Placeholder '...' not found`                      | Placeholder was not inserted or path mismatch | Insert the placeholder with `notion-update-page` first        |
+| Error | Cause | Fix |
+| ----- | ----- | --- |
+| `[ACCESS DENIED] No permission marker` | Bot not listed on this page | Ask the workspace owner to add `BotName 🖊` to the first line |
+| `[ACCESS DENIED] Cannot modify permission markers` | Edit targeted the first line | Adjust `old_str` to not include the first line |
+| `Placeholder '...' not found` | Placeholder was not inserted or path mismatch | Insert the placeholder with `notion-update-page` first |

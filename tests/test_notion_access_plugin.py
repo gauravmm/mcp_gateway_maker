@@ -586,3 +586,100 @@ async def test_create_comment_passes_with_write():
     params = make_call("notion-create-comment", {"page_id": "page1", "rich_text": []})
     out = await plugin.on_call_tool_request(params)
     assert out is params
+
+
+# ---------------------------------------------------------------------------
+# Auto-fetch on permission miss
+# ---------------------------------------------------------------------------
+
+
+class _MockClient:
+    """Minimal upstream client mock for auto-fetch tests."""
+
+    def __init__(self, response_text: str, raises: bool = False) -> None:
+        self._text = response_text
+        self._raises = raises
+        self.call_count = 0
+
+    async def call_tool(self, name: str, args: dict) -> ToolResult:
+        self.call_count += 1
+        if self._raises:
+            raise RuntimeError("upstream connection failed")
+        return make_result(self._text)
+
+
+@pytest.mark.asyncio
+async def test_auto_fetch_allows_write():
+    """Write on uncached page succeeds when auto-fetch returns a WRITE marker."""
+    plugin = _plugin()
+    plugin._client = _MockClient(_notion_page(f"{BOT} {WRITE_EMOJI}"))
+
+    params = make_call(
+        "notion-update-page",
+        {"page_id": "page1", "command": "update_properties", "properties": {"title": "New"}},
+    )
+    out = await plugin.on_call_tool_request(params)
+    assert out.name == "notion-update-page"
+    assert plugin._client.call_count == 1  # auto-fetch was called
+
+
+@pytest.mark.asyncio
+async def test_auto_fetch_read_only_blocks_write():
+    """Auto-fetch returns READ marker — write must be blocked."""
+    plugin = _plugin()
+    plugin._client = _MockClient(_notion_page(f"{BOT} {READ_EMOJI}"))
+
+    params = make_call(
+        "notion-update-page", {"page_id": "page1", "command": "update_properties"}
+    )
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "read-write" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_fetch_no_marker_blocks():
+    """Auto-fetch returns page with no marker — must be blocked."""
+    plugin = _plugin()
+    plugin._client = _MockClient(_notion_page("No markers here"))
+
+    params = make_call(
+        "notion-update-page", {"page_id": "page1", "command": "update_properties"}
+    )
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "permission marker" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_fetch_failure_falls_back_to_cache_error():
+    """If auto-fetch raises, fall back to the 'not in cache' error."""
+    plugin = _plugin()
+    plugin._client = _MockClient("", raises=True)
+
+    params = make_call(
+        "notion-update-page", {"page_id": "page1", "command": "update_properties"}
+    )
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(params)
+    assert "cache" in str(exc.value).lower() or "fetch" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_auto_fetch_skipped_on_cache_hit():
+    """If page is already cached, the client must not be called."""
+    plugin = _plugin()
+    # Populate cache manually via the fetch response hook
+    fetch_params = make_call("notion-fetch", {"id": "page1"})
+    result = make_result(_notion_page(f"{BOT} {WRITE_EMOJI}"))
+    await plugin.on_call_tool_response(fetch_params, result)
+
+    mock = _MockClient(_notion_page(f"{BOT} {WRITE_EMOJI}"))
+    plugin._client = mock
+
+    params = make_call(
+        "notion-update-page",
+        {"page_id": "page1", "command": "update_properties", "properties": {"title": "New"}},
+    )
+    await plugin.on_call_tool_request(params)
+    assert mock.call_count == 0  # cache was hit, no auto-fetch

@@ -169,9 +169,9 @@ async def _run_server_async(config: ProxyConfig) -> None:
     async with contextlib.AsyncExitStack() as stack:
         connected_clients: dict[str, Client] = {}
         for upstream in config.upstreams:
-            if (
-                isinstance(upstream.transport, HttpTransportConfig)
-                and upstream.transport.persistent_connection
+            if isinstance(upstream.transport, HttpTransportConfig) and (
+                upstream.transport.persistent_connection
+                or any(isinstance(p, NotionAccessPluginConfig) for p in upstream.plugins)
             ):
                 transport = _build_transport(upstream)
                 client: Client = await stack.enter_async_context(Client(transport))

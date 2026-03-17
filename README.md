@@ -181,7 +181,7 @@ Modifies tool names and call arguments. All renames are symmetric: the plugin tr
 
 ### `notion_access`
 
-Content-based access control for Notion MCP upstreams. Enforces per-bot, per-page read/write permissions using emoji markers embedded in the first line of each page. See [README_NOTION.md](README_NOTION.md) for full details.
+Content-based access control for Notion MCP upstreams. Enforces per-bot, per-page read/write permissions using emoji markers embedded in the first line of each page. Permissions are checked and cached transparently — bots can write directly without a prior fetch. See [README_NOTION.md](README_NOTION.md) for full details.
 
 ```yaml
 - type: notion_access
@@ -262,7 +262,7 @@ The underlying proxy is based on FastMCP, and has all the expected features:
 - **Filter plugin** — allow-list or deny-list tools, resources, and prompts by glob pattern
 - **Rewrite plugin** — rename tools, inject fixed arguments, prefix response text
 - **Logging plugin** — structured JSONL audit log of all operations with timing
-- **Notion access plugin** — per-bot, per-page read/write access control using in-page permission markers
+- **Notion access plugin** — per-bot, per-page read/write access control using in-page permission markers; permissions are fetched and cached transparently
 - **Hive access plugin** — workspace + project allowlist enforcement for Hive upstreams, with action-ownership verification
 - **Inventory plugin** — JSON snapshot of all available tools, resources, and prompts for offline analysis
 - **Stdio and HTTP transports** — upstream and proxy transports are independently configurable

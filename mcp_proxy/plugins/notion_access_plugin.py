@@ -31,7 +31,7 @@ from ..config.schema import NotionAccessPluginConfig
 from .base import PluginBase
 
 if TYPE_CHECKING:
-    from fastmcp import FastMCP
+    from fastmcp import Client, FastMCP
 
 _ERR_ACCESS_DENIED = -32601
 _NOTION_API = "https://api.notion.com/v1"
@@ -154,6 +154,7 @@ class NotionAccessPlugin(PluginBase):
         self._cache: dict[str, CachedPermission] = {}
         self._notion_token = config.notion_token
         self.hide_blocked = config.hide_blocked
+        self._client: Client | None = None
 
     # ------------------------------------------------------------------
     # Cache helpers
@@ -176,16 +177,45 @@ class NotionAccessPlugin(PluginBase):
             expires_at=time.monotonic() + self._ttl,
         )
 
-    def _require_cached(self, page_id: str, required: AccessLevel) -> CachedPermission:
-        """Return cached permission or raise if missing/insufficient."""
+    def set_upstream_client(self, client: object) -> None:
+        from fastmcp import Client
+
+        if isinstance(client, Client):
+            self._client = client
+
+    async def _auto_fetch(self, page_id: str) -> None:
+        """Fetch page from upstream, parse markers, populate cache."""
+        assert self._client is not None
+        try:
+            result = await self._client.call_tool("notion-fetch", {"id": page_id})
+            text = _extract_text(result)
+            if text:
+                level, first_line = _parse_permission(
+                    text, self._bot_name, self._read_emoji, self._write_emoji
+                )
+                self._set_cached(page_id, level, first_line)
+        except Exception as exc:
+            logging.warning("notion_access: auto-fetch failed for page %s: %s", page_id, exc)
+
+    async def _ensure_cached(self, page_id: str, required: AccessLevel) -> CachedPermission:
+        """Return cached permission, auto-fetching if not in cache."""
         entry = self._get_cached(page_id)
         if entry is None:
+            if self._client is not None:
+                await self._auto_fetch(page_id)
+                entry = self._get_cached(page_id)
+            if entry is None:
+                raise McpError(
+                    ErrorData(
+                        code=_ERR_ACCESS_DENIED,
+                        message=f"Page {page_id} not in cache. Fetch the page first to check permissions.",
+                    )
+                )
+        if entry.level == AccessLevel.NONE:
             raise McpError(
                 ErrorData(
                     code=_ERR_ACCESS_DENIED,
-                    message=(
-                        f"Page {page_id} not in cache. Fetch the page first to check permissions."
-                    ),
+                    message=f"No permission marker for {self._bot_name} on page {page_id}.",
                 )
             )
         if entry.level.value < required.value:
@@ -244,13 +274,13 @@ class NotionAccessPlugin(PluginBase):
         # notion-get-comments: requires at least READ on the page
         if name == "notion-get-comments":
             page_id = args.get("page_id", "")
-            self._require_cached(page_id, AccessLevel.READ)
+            await self._ensure_cached(page_id, AccessLevel.READ)
             return params
 
         # Write tools that operate on a single page_id
         if name in _WRITE_TOOLS:
             page_id = args.get("page_id", "")
-            cached = self._require_cached(page_id, AccessLevel.WRITE)
+            cached = await self._ensure_cached(page_id, AccessLevel.WRITE)
 
             # For notion-update-page: protect the first line
             if name == "notion-update-page":
@@ -262,12 +292,12 @@ class NotionAccessPlugin(PluginBase):
         if name == "notion-move-pages":
             page_ids = args.get("page_or_database_ids", [])
             for pid in page_ids:
-                self._require_cached(pid, AccessLevel.WRITE)
+                await self._ensure_cached(pid, AccessLevel.WRITE)
             return params
 
         # notion-create-pages: check parent permission
         if name == "notion-create-pages":
-            return self._handle_create_pages_request(params)
+            return await self._handle_create_pages_request(params)
 
         # Unknown tool: allow through
         return params
@@ -315,7 +345,7 @@ class NotionAccessPlugin(PluginBase):
             return rest
         return content
 
-    def _handle_create_pages_request(
+    async def _handle_create_pages_request(
         self, params: mt.CallToolRequestParams
     ) -> mt.CallToolRequestParams:
         """Check parent permission for create-pages; inherit first line."""
@@ -325,7 +355,7 @@ class NotionAccessPlugin(PluginBase):
         if parent and isinstance(parent, dict):
             parent_page_id = parent.get("page_id", "")
             if parent_page_id:
-                cached = self._require_cached(parent_page_id, AccessLevel.WRITE)
+                cached = await self._ensure_cached(parent_page_id, AccessLevel.WRITE)
                 # Inherit the permission first line into each new page
                 pages = args.get("pages", [])
                 new_pages = []
@@ -432,8 +462,8 @@ def _register_upload_tool(
 
         page_id = _normalize_page_id(page_id)
 
-        # Require cached WRITE permission — consistent with other write tools.
-        plugin._require_cached(page_id, AccessLevel.WRITE)
+        # Require WRITE permission — auto-fetches if not cached.
+        await plugin._ensure_cached(page_id, AccessLevel.WRITE)
 
         file_bytes = path.read_bytes()
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"

@@ -19,9 +19,9 @@ The `notion_access` plugin enforces per-bot, per-page read/write permissions on 
    OcelliBot 🖊, ReviewBot 👀, AdminBot 🖊
    ```
 
-2. **Fetch-then-act pattern.** The plugin uses a cache-based approach:
+2. **Transparent permission lookup.** The plugin checks its cache before every write operation:
    - When a bot calls `notion-fetch`, the plugin lets the request through to Notion, inspects the response for permission markers, caches the result, and either returns the page content or blocks with an access denied error.
-   - All write operations (`notion-update-page`, `notion-create-comment`, etc.) check the cache. If the page hasn't been fetched yet, the request is blocked with an error asking the caller to fetch the page first.
+   - For all write operations (`notion-update-page`, `notion-create-comment`, etc.), if the page's permission isn't cached yet, the proxy automatically fetches it in the background, checks for a marker, and then proceeds or blocks. The bot never needs to call `notion-fetch` explicitly before writing.
 
 3. **Permission marker protection.** The first line containing the markers is treated as immutable:
    - `update_content` operations that target text matching the first line are blocked.
@@ -68,7 +68,7 @@ upstreams:
 | `notion-search` | None | Always allowed (workspace-level search). |
 | `notion-get-teams` | None | Always allowed. |
 | `notion-get-users` | None | Always allowed. |
-| `notion-fetch` | None (checked on response) | Request passes through; response is inspected for markers. If no marker is found for the bot, the response is replaced with an access denied error. Permission is cached for subsequent operations. |
+| `notion-fetch` | None (checked on response) | Request passes through; response is inspected for markers. If no marker is found for the bot, the response is replaced with an access denied error. Permission is cached for subsequent operations. Write tools also trigger an automatic background fetch when the page is not yet cached. |
 | `notion-get-comments` | READ | Page must have been fetched first. |
 | `notion-update-page` | WRITE | Includes first-line protection (see below). |
 | `notion-create-comment` | WRITE | Page must have been fetched with write access. |
@@ -88,11 +88,10 @@ The permission marker line is protected from modification:
 
 ## Cache behavior
 
-Permissions are cached in memory keyed by page ID, with a configurable TTL (default 60 seconds). When a cached entry expires, the page must be fetched again before any operations are allowed. This means:
+Permissions are cached in memory keyed by page ID, with a configurable TTL (default 60 seconds). When a cached entry expires, the next write operation triggers a fresh background fetch automatically. This means:
 
-- A bot must always `notion-fetch` a page before writing to it.
 - Changes to permission markers in Notion take effect within `cache_ttl_seconds`.
-- There is no persistence across proxy restarts; all pages must be re-fetched.
+- There is no persistence across proxy restarts; permissions are re-fetched on first access after restart.
 
 ## Uploading images (`notion_upload_image`)
 
@@ -116,20 +115,14 @@ plugins:
 
 ### Usage
 
-1. **Fetch the page** to confirm write access is cached:
-
-   ```
-   notion-fetch  →  page_id: <your-page-id>
-   ```
-
-2. **Insert the placeholder** using `notion-update-page`. The placeholder format is `[IMAGE_UPLOAD: /absolute/path/to/file.png]`:
+1. **Insert the placeholder** using `notion-update-page`. The placeholder format is `[IMAGE_UPLOAD: /absolute/path/to/file.png]`:
 
    ```
    notion-update-page  →  command: update_content
                           content_updates: [{old_str: "...", new_str: "...\n[IMAGE_UPLOAD: /home/user/poster.png]"}]
    ```
 
-3. **Upload the image**:
+2. **Upload the image** (permission is checked and auto-fetched if needed):
 
    ```
    notion_upload_image  →  page_id: <your-page-id>
@@ -157,8 +150,8 @@ The tool requires WRITE access on the target page (confirmed via the fetch-and-c
 
 A typical interaction looks like this:
 
-1. Bot calls `notion-fetch` with a page ID.
-2. Plugin inspects the response, finds `OcelliBot 🖊` on the first line, caches WRITE access.
-3. Bot calls `notion-update-page` with `update_content` to edit the page body. Plugin checks cache, confirms WRITE access, verifies the edit doesn't target the first line, and allows it.
-4. Bot calls `notion-create-pages` under the same page. Plugin checks parent has WRITE access, prepends the parent's first line to the new page's content.
-5. Bot calls `notion-fetch` on a different page that has no markers. Plugin replaces the response with `[ACCESS DENIED] No permission marker for OcelliBot on this page.`
+1. Bot calls `notion-update-page` on a page it has never fetched.
+2. Plugin finds no cache entry, automatically fetches the page in the background, finds `OcelliBot 🖊` on the first line, caches WRITE access, and allows the update.
+3. Bot calls `notion-create-pages` under the same page. Plugin checks (from cache) that the parent has WRITE access, prepends the parent's first line to the new page's content.
+4. Bot calls `notion-fetch` on a page that has no markers. Plugin replaces the response with `[ACCESS DENIED] No permission marker for OcelliBot on this page.`
+5. Bot attempts to write to that page. Plugin auto-fetches again (cache miss or TTL expired), finds no marker, and blocks the write.

@@ -87,6 +87,26 @@ HTTP upstreams can use OAuth instead of (or in addition to) static headers. Add 
 
 All three fields are optional and default to `null` -- the upstream server's OAuth discovery endpoint determines what's required.
 
+If clients reach your proxy over a network hostname such as `gateway.local`, that does not need to be the OAuth callback URL. The callback is only used by the proxy machine during the upstream login flow. For providers like Notion, register a loopback redirect URI such as `http://localhost:54321/callback`, complete the OAuth flow once on the proxy machine, and then let clients keep using the normal proxy endpoint at `http://gateway.local:<port>/mcp`.
+
+#### Headless server setup
+
+If the proxy is running on a headless remote machine, use SSH port forwarding so the browser on your laptop can complete the localhost callback on behalf of the server:
+
+```bash
+ssh -L 54321:127.0.0.1:54321 user@gateway.local
+```
+
+Then:
+
+1. Start the proxy on the remote machine with the Notion OAuth upstream configured.
+2. Keep the SSH tunnel open.
+3. Begin the OAuth flow for the proxy.
+4. Complete the browser login on your laptop.
+5. Let the provider redirect to `http://localhost:54321/callback`; the SSH tunnel forwards that callback to the proxy machine.
+
+After the first successful login, the proxy stores tokens in `.oauth2/<upstream_name>/`, so clients can keep using the remote proxy normally without repeating the browser flow unless the refresh token expires or is revoked.
+
 ### Plugin execution order
 
 Plugins run in the order listed. For a request, plugin[0] runs first; for the response, plugin[0] also runs first (it sees the response before plugin[1] does). The global plugins wrap the per-upstream plugins, so global runs outermost.

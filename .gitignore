@@ -1,4 +1,5 @@
 benchclaw.yaml
+.mcp.json
 logs*/
 .env*
 .oauth2/

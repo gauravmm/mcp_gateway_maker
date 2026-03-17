@@ -4,7 +4,7 @@ Enforces per-bot, per-page permissions using markers embedded in the first line
 of each page's content. Marker format: ``BotName 🖊`` (read-write) or
 ``BotName 👀`` (read-only), appearing anywhere on the first line.
 
-Also provides a ``notion_upload_image`` synthetic tool (when ``notion_token`` is
+Also provides a ``notion-upload-image`` synthetic tool (when ``notion_token`` is
 configured) that uploads a local image file to Notion and replaces a placeholder
 block with an image block.
 """
@@ -419,7 +419,7 @@ class NotionAccessPlugin(PluginBase):
         if not self._notion_token:
             logging.warning(
                 "notion_access: notion_token not configured; "
-                "notion_upload_image tool will not be available."
+                "notion-upload-image tool will not be available."
             )
             return
         _register_upload_tool(server, self, self._notion_token)
@@ -430,9 +430,9 @@ def _register_upload_tool(
     plugin: NotionAccessPlugin,
     token: str,
 ) -> None:
-    """Register the notion_upload_image tool on the aggregator server."""
+    """Register the notion-upload-image tool on the aggregator server."""
 
-    @server.tool(name="notion_upload_image")
+    @server.tool(name="notion-upload-image")
     async def notion_upload_image(
         page_id: str,
         file_path: str,

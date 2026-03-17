@@ -78,7 +78,7 @@ notion-update-page
 **Step 2** — Upload the image (finds the placeholder, uploads the file, replaces it with an image block):
 
 ```
-notion_upload_image
+notion-upload-image
   page_id: "..."
   file_path: "/absolute/path/to/image.png"
   caption: "Optional caption"

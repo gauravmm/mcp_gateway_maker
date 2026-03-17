@@ -93,13 +93,13 @@ Permissions are cached in memory keyed by page ID, with a configurable TTL (defa
 - Changes to permission markers in Notion take effect within `cache_ttl_seconds`.
 - There is no persistence across proxy restarts; permissions are re-fetched on first access after restart.
 
-## Uploading images (`notion_upload_image`)
+## Uploading images (`notion-upload-image`)
 
-The plugin registers a synthetic `notion_upload_image` tool when `notion_token` is set in the config. This tool uploads a local image file to Notion and replaces a placeholder text block with a proper image block.
+The plugin registers a synthetic `notion-upload-image` tool when `notion_token` is set in the config. This tool uploads a local image file to Notion and replaces a placeholder text block with a proper image block.
 
 ### Why a placeholder?
 
-The Notion MCP server has no native file-upload tool. The two-step placeholder approach works around this: you first insert a sentinel text block (using `notion-update-page`), then call `notion_upload_image`, which finds that block, uploads the file directly to the Notion API, removes the placeholder, and inserts an image block in its place.
+The Notion MCP server has no native file-upload tool. The two-step placeholder approach works around this: you first insert a sentinel text block (using `notion-update-page`), then call `notion-upload-image`, which finds that block, uploads the file directly to the Notion API, removes the placeholder, and inserts an image block in its place.
 
 ### Configuring the plugin extension
 
@@ -125,7 +125,7 @@ plugins:
 2. **Upload the image** (permission is checked and auto-fetched if needed):
 
    ```
-   notion_upload_image  →  page_id: <your-page-id>
+   notion-upload-image  →  page_id: <your-page-id>
                            file_path: /home/user/poster.png
                            caption: "Optional caption"   # optional
    ```

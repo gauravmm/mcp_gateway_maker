@@ -708,7 +708,7 @@ async def test_logging_rotation_renames_payloads_dir(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# NotionAccessPlugin — notion_upload_image synthetic tool
+# NotionAccessPlugin — notion-upload-image synthetic tool
 # ---------------------------------------------------------------------------
 
 
@@ -742,12 +742,12 @@ async def test_upload_image_no_token_emits_warning(caplog):
     # Tool should not be registered
     async with Client(server) as client:
         tools = await client.list_tools()
-    assert "notion_upload_image" not in {t.name for t in tools}
+    assert "notion-upload-image" not in {t.name for t in tools}
 
 
 @pytest.mark.asyncio
 async def test_upload_image_requires_write_permission(tmp_path):
-    """notion_upload_image raises ToolError if page has no cached WRITE permission."""
+    """notion-upload-image raises ToolError if page has no cached WRITE permission."""
     from fastmcp import Client, FastMCP
     from fastmcp.exceptions import ToolError
 
@@ -763,14 +763,14 @@ async def test_upload_image_requires_write_permission(tmp_path):
     async with Client(server) as client:
         with pytest.raises(ToolError, match="not in cache"):
             await client.call_tool(
-                "notion_upload_image",
+                "notion-upload-image",
                 {"page_id": "page-abc", "file_path": str(img)},
             )
 
 
 @pytest.mark.asyncio
 async def test_upload_image_success(tmp_path):
-    """notion_upload_image uploads file and inserts image block, replacing the placeholder."""
+    """notion-upload-image uploads file and inserts image block, replacing the placeholder."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from fastmcp import Client, FastMCP
@@ -838,7 +838,7 @@ async def test_upload_image_success(tmp_path):
     ):
         async with Client(server) as client:
             result = await client.call_tool(
-                "notion_upload_image",
+                "notion-upload-image",
                 {"page_id": page_id, "file_path": str(file_path), "caption": "A test image"},
             )
 

@@ -417,12 +417,25 @@ class NotionAccessPlugin(PluginBase):
 
         # No parent on any page — workspace-level creation
         if not self._allow_workspace_creation:
+            top_parent = args.get("parent")
+            if top_parent:
+                raise McpError(
+                    ErrorData(
+                        code=_ERR_ACCESS_DENIED,
+                        message=(
+                            "'parent' must be inside each page object, not at the top level. "
+                            "Use: pages=[{parent: {page_id: '...', type: 'page_id'}, "
+                            "properties: ..., content: ...}]"
+                        ),
+                    )
+                )
             raise McpError(
                 ErrorData(
                     code=_ERR_ACCESS_DENIED,
                     message=(
                         "Workspace-level page creation is not allowed. "
-                        "Specify a parent page_id."
+                        "Specify parent inside each page: "
+                        "pages=[{parent: {page_id: '...', type: 'page_id'}, ...}]"
                     ),
                 )
             )

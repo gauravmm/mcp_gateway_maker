@@ -61,7 +61,7 @@ notion-update-page
 
 ### Creating pages
 
-New pages under a parent automatically inherit the parent's permission markers. Specify the parent inside each page object:
+New pages under a parent automatically inherit the parent's permission markers. The `parent` field goes **inside each page object** — not at the top level:
 
 ```
 notion-create-pages
@@ -70,6 +70,8 @@ notion-create-pages
       properties: { title: "New Page" }
       content: "Page body..."
 ```
+
+Do NOT pass `parent` as a top-level argument — the tool will return an error telling you to move it inside the page.
 
 ### Removing images
 
@@ -158,3 +160,4 @@ Standard Markdown mostly works. Key differences:
 | `[ACCESS DENIED] Cannot modify permission markers` | Edit targeted the first line | Adjust `old_str` to not include the first line |
 | `Placeholder '...' not found` | Placeholder was not inserted or path mismatch | Insert the placeholder with `notion-update-page` first |
 | `replace_content` fails on a page with images | Image blocks can't be handled by text replacement | Call `notion-delete-image` first, then `replace_content` |
+| `'parent' must be inside each page object` | `parent` passed at top level | Move it inside each page: `pages=[{parent: {...}, ...}]` |

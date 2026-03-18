@@ -84,7 +84,7 @@ The permission marker line is protected from modification:
 
 - **`update_content`**: If any `old_str` in `content_updates` matches text found in the cached first line, the operation is blocked. Body edits that don't touch the first line pass through normally.
 - **`replace_content`**: The cached first line is automatically prepended to `new_str`, so the markers survive a full content replacement.
-- **`create-pages` with parent**: Each new child page's `content` field is prepended with the parent's first line, inheriting the same access markers. If the LLM already included a marker line (any line containing the read or write emoji), it is stripped first to prevent duplication. The proxy is always the authority on the marker — the parent's exact first line is used regardless of what the caller provides.
+- **`create-pages` with parent**: When a top-level `parent` with a `page_id` is provided, each new child page's `content` field is prepended with the parent's first line, inheriting the same access markers. If the LLM already included a marker line (any line containing the read or write emoji), it is stripped first to prevent duplication. The proxy is always the authority on the marker — the parent's exact first line is used regardless of what the caller provides.
 
 ## Cache behavior
 

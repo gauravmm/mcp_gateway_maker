@@ -389,56 +389,61 @@ class NotionAccessPlugin(PluginBase):
     async def _handle_create_pages_request(
         self, params: mt.CallToolRequestParams
     ) -> mt.CallToolRequestParams:
-        """Check parent permission for create-pages; inherit first line.
-
-        Each page in the ``pages`` array carries its own ``parent.page_id``.
-        """
+        """Check parent permission for create-pages; inherit first line."""
         args = dict(params.arguments or {})
-        pages = args.get("pages", [])
-        new_pages = []
-        any_page_parent = False
+        parent = args.get("parent")
 
-        for page in pages:
-            if isinstance(page, dict):
-                page_parent = page.get("parent")
-                if page_parent and isinstance(page_parent, dict):
-                    page_parent_id = page_parent.get("page_id", "")
-                    if page_parent_id:
-                        any_page_parent = True
-                        cached = await self._ensure_cached(page_parent_id, AccessLevel.WRITE)
-                        page = dict(page)
-                        content = self._strip_marker_line(page.get("content", ""))
-                        page["content"] = cached.first_line + "\n" + content
-            new_pages.append(page)
+        # Handle parent passed as a JSON string instead of a dict
+        if parent and isinstance(parent, str):
+            try:
+                parent = json.loads(parent)
+                args["parent"] = parent
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-        if any_page_parent:
-            args["pages"] = new_pages
-            return mt.CallToolRequestParams(name=params.name, arguments=args)
-
-        # No parent on any page — workspace-level creation
-        if not self._allow_workspace_creation:
-            top_parent = args.get("parent")
-            if top_parent:
+        if parent and isinstance(parent, dict):
+            parent_page_id = parent.get("page_id", "")
+            if parent_page_id:
+                cached = await self._ensure_cached(parent_page_id, AccessLevel.WRITE)
+                # Inherit the permission first line into each new page
+                pages = args.get("pages", [])
+                new_pages = []
+                for page in pages:
+                    page = dict(page)
+                    content = self._strip_marker_line(page.get("content", ""))
+                    page["content"] = cached.first_line + "\n" + content
+                    new_pages.append(page)
+                args["pages"] = new_pages
+                return mt.CallToolRequestParams(name=params.name, arguments=args)
+        else:
+            # No parent specified — workspace-level creation
+            if not self._allow_workspace_creation:
+                # Detect parent mistakenly placed inside page objects
+                pages = args.get("pages", [])
+                has_nested_parent = any(
+                    isinstance(p, dict) and "parent" in p for p in pages
+                )
+                if has_nested_parent:
+                    raise McpError(
+                        ErrorData(
+                            code=_ERR_ACCESS_DENIED,
+                            message=(
+                                "Found 'parent' inside page objects, but 'parent' "
+                                "must be a top-level argument. Use: "
+                                "{parent: {page_id: '...'}, "
+                                "pages: [{properties: ..., content: ...}]}"
+                            ),
+                        )
+                    )
                 raise McpError(
                     ErrorData(
                         code=_ERR_ACCESS_DENIED,
                         message=(
-                            "'parent' must be inside each page object, not at the top level. "
-                            "Use: pages=[{parent: {page_id: '...', type: 'page_id'}, "
-                            "properties: ..., content: ...}]"
+                            "Workspace-level page creation is not allowed. "
+                            "Specify a parent page_id as a top-level argument."
                         ),
                     )
                 )
-            raise McpError(
-                ErrorData(
-                    code=_ERR_ACCESS_DENIED,
-                    message=(
-                        "Workspace-level page creation is not allowed. "
-                        "Specify parent inside each page: "
-                        "pages=[{parent: {page_id: '...', type: 'page_id'}, ...}]"
-                    ),
-                )
-            )
 
         return params
 

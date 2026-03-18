@@ -308,9 +308,9 @@ async def test_replace_content_prepends_first_line():
 # create-pages inheritance
 # ---------------------------------------------------------------------------
 
-def _create_page(parent_id: str, title: str, content: str = "") -> dict:
-    """Build a page dict in the real API format (parent inside each page)."""
-    page = {"parent": {"page_id": parent_id, "type": "page_id"}, "properties": {"title": title}}
+def _create_page(title: str, content: str = "") -> dict:
+    """Build a page dict (no parent — parent is top-level in the API)."""
+    page: dict = {"properties": {"title": title}}
     if content:
         page["content"] = content
     return page
@@ -325,7 +325,7 @@ async def test_create_pages_inherits_first_line():
 
     create_params = make_call(
         "notion-create-pages",
-        {"pages": [_create_page("parent1", "Child", "Child body.")]},
+        {"parent": {"page_id": "parent1"}, "pages": [_create_page("Child", "Child body.")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -343,7 +343,10 @@ async def test_create_pages_strips_duplicate_marker():
 
     create_params = make_call(
         "notion-create-pages",
-        {"pages": [_create_page("parent1", "Child", f"{BOT} {WRITE_EMOJI}\nChild body.")]},
+        {
+            "parent": {"page_id": "parent1"},
+            "pages": [_create_page("Child", f"{BOT} {WRITE_EMOJI}\nChild body.")],
+        },
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -362,7 +365,10 @@ async def test_create_pages_strips_llm_marker_uses_parent():
 
     create_params = make_call(
         "notion-create-pages",
-        {"pages": [_create_page("parent1", "Child", f"{BOT} {WRITE_EMOJI}\nChild body.")]},
+        {
+            "parent": {"page_id": "parent1"},
+            "pages": [_create_page("Child", f"{BOT} {WRITE_EMOJI}\nChild body.")],
+        },
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -380,7 +386,7 @@ async def test_create_pages_no_content():
 
     create_params = make_call(
         "notion-create-pages",
-        {"pages": [_create_page("parent1", "Empty Child")]},
+        {"parent": {"page_id": "parent1"}, "pages": [_create_page("Empty Child")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -397,6 +403,40 @@ async def test_create_pages_without_parent_blocked():
     with pytest.raises(McpError) as exc:
         await plugin.on_call_tool_request(create_params)
     assert "workspace" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_create_pages_nested_parent_gives_helpful_error():
+    """Parent inside page objects (wrong format) gives a specific error message."""
+    plugin = _plugin(allow_workspace_creation=False)
+    create_params = make_call(
+        "notion-create-pages",
+        {"pages": [{"parent": {"page_id": "p1"}, "properties": {"title": "X"}}]},
+    )
+    with pytest.raises(McpError) as exc:
+        await plugin.on_call_tool_request(create_params)
+    assert "top-level" in str(exc.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_create_pages_string_parent_decoded():
+    """Parent passed as a JSON string is decoded and works normally."""
+    plugin = _plugin()
+    first_line = f"{BOT} {WRITE_EMOJI}"
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "parent": '{"page_id": "parent1"}',
+            "pages": [_create_page("Child", "Body text.")],
+        },
+    )
+    out = await plugin.on_call_tool_request(create_params)
+    page_content = out.arguments["pages"][0]["content"]
+    assert page_content.startswith(first_line + "\n")
+    assert "Body text." in page_content
 
 
 @pytest.mark.asyncio
@@ -912,7 +952,7 @@ async def test_create_pages_requires_write():
 
     create_params = make_call(
         "notion-create-pages",
-        {"pages": [_create_page("parent1", "Child", "Child body.")]},
+        {"parent": {"page_id": "parent1"}, "pages": [_create_page("Child", "Child body.")]},
     )
     with pytest.raises(McpError):
         await plugin.on_call_tool_request(create_params)

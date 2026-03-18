@@ -913,3 +913,59 @@ async def test_delete_image_blocked_with_read_only():
     with pytest.raises(McpError) as exc:
         await plugin._ensure_cached("page1", AccessLevel.WRITE)
     assert "read-write" in str(exc.value).lower() or "permission" in str(exc.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# create-pages with per-page parent format
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_pages_per_page_parent_inherits_first_line():
+    """Parent specified inside each page object (real API format)."""
+    plugin = _plugin()
+    first_line = f"{BOT} {WRITE_EMOJI}"
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "pages": [
+                {
+                    "parent": {"page_id": "parent1", "type": "page_id"},
+                    "properties": {"title": "Child"},
+                    "content": "Child body.",
+                }
+            ]
+        },
+    )
+    out = await plugin.on_call_tool_request(create_params)
+    page_content = out.arguments["pages"][0]["content"]
+    assert page_content.startswith(first_line + "\n")
+    assert "Child body." in page_content
+
+
+@pytest.mark.asyncio
+async def test_create_pages_per_page_parent_requires_write():
+    """Per-page parent format blocks with read-only permission."""
+    plugin = _plugin()
+    fetch_params = make_call("notion-fetch", {"id": "parent1"})
+    await plugin.on_call_tool_response(
+        fetch_params, make_result(_notion_page(f"{BOT} {READ_EMOJI}"))
+    )
+
+    create_params = make_call(
+        "notion-create-pages",
+        {
+            "pages": [
+                {
+                    "parent": {"page_id": "parent1", "type": "page_id"},
+                    "properties": {"title": "Child"},
+                    "content": "Child body.",
+                }
+            ]
+        },
+    )
+    with pytest.raises(McpError):
+        await plugin.on_call_tool_request(create_params)

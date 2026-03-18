@@ -308,23 +308,24 @@ async def test_replace_content_prepends_first_line():
 # create-pages inheritance
 # ---------------------------------------------------------------------------
 
+def _create_page(parent_id: str, title: str, content: str = "") -> dict:
+    """Build a page dict in the real API format (parent inside each page)."""
+    page = {"parent": {"page_id": parent_id, "type": "page_id"}, "properties": {"title": title}}
+    if content:
+        page["content"] = content
+    return page
+
 
 @pytest.mark.asyncio
 async def test_create_pages_inherits_first_line():
     plugin = _plugin()
     first_line = f"{BOT} {WRITE_EMOJI}"
     fetch_params = make_call("notion-fetch", {"id": "parent1"})
-    result = make_result(_notion_page(first_line))
-    await plugin.on_call_tool_response(fetch_params, result)
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
 
     create_params = make_call(
         "notion-create-pages",
-        {
-            "parent": {"page_id": "parent1"},
-            "pages": [
-                {"properties": {"title": "Child"}, "content": "Child body."},
-            ],
-        },
+        {"pages": [_create_page("parent1", "Child", "Child body.")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -338,24 +339,14 @@ async def test_create_pages_strips_duplicate_marker():
     plugin = _plugin()
     first_line = f"{BOT} {WRITE_EMOJI}"
     fetch_params = make_call("notion-fetch", {"id": "parent1"})
-    result = make_result(_notion_page(first_line))
-    await plugin.on_call_tool_response(fetch_params, result)
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
 
     create_params = make_call(
         "notion-create-pages",
-        {
-            "parent": {"page_id": "parent1"},
-            "pages": [
-                {
-                    "properties": {"title": "Child"},
-                    "content": f"{BOT} {WRITE_EMOJI}\nChild body.",
-                },
-            ],
-        },
+        {"pages": [_create_page("parent1", "Child", f"{BOT} {WRITE_EMOJI}\nChild body.")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
-    # Should have exactly one marker line, not two
     assert page_content == f"{first_line}\nChild body."
 
 
@@ -365,28 +356,16 @@ async def test_create_pages_strips_llm_marker_uses_parent():
     plugin = _plugin()
     parent_line = f"{BOT} {READ_EMOJI}, AdminBot {WRITE_EMOJI}"
     fetch_params = make_call("notion-fetch", {"id": "parent1"})
-    result = make_result(_notion_page(parent_line))
-    await plugin.on_call_tool_response(fetch_params, result)
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(parent_line)))
 
-    # Fetch again with WRITE to allow creation
     plugin._cache["parent1"].level = AccessLevel.WRITE
 
     create_params = make_call(
         "notion-create-pages",
-        {
-            "parent": {"page_id": "parent1"},
-            "pages": [
-                {
-                    "properties": {"title": "Child"},
-                    # LLM used a different/wrong marker
-                    "content": f"{BOT} {WRITE_EMOJI}\nChild body.",
-                },
-            ],
-        },
+        {"pages": [_create_page("parent1", "Child", f"{BOT} {WRITE_EMOJI}\nChild body.")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
-    # Should use the parent's marker, not the LLM's
     assert page_content.startswith(parent_line + "\n")
     assert "Child body." in page_content
 
@@ -397,15 +376,11 @@ async def test_create_pages_no_content():
     plugin = _plugin()
     first_line = f"{BOT} {WRITE_EMOJI}"
     fetch_params = make_call("notion-fetch", {"id": "parent1"})
-    result = make_result(_notion_page(first_line))
-    await plugin.on_call_tool_response(fetch_params, result)
+    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
 
     create_params = make_call(
         "notion-create-pages",
-        {
-            "parent": {"page_id": "parent1"},
-            "pages": [{"properties": {"title": "Empty Child"}}],
-        },
+        {"pages": [_create_page("parent1", "Empty Child")]},
     )
     out = await plugin.on_call_tool_request(create_params)
     page_content = out.arguments["pages"][0]["content"]
@@ -432,7 +407,6 @@ async def test_create_pages_without_parent_allowed():
         {"pages": [{"properties": {"title": "Root"}, "content": "stuff"}]},
     )
     out = await plugin.on_call_tool_request(create_params)
-    # Should pass through unchanged
     assert out.arguments["pages"][0]["content"] == "stuff"
 
 
@@ -915,40 +889,9 @@ async def test_delete_image_blocked_with_read_only():
     assert "read-write" in str(exc.value).lower() or "permission" in str(exc.value).lower()
 
 
-# ---------------------------------------------------------------------------
-# create-pages with per-page parent format
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_create_pages_per_page_parent_inherits_first_line():
-    """Parent specified inside each page object (real API format)."""
-    plugin = _plugin()
-    first_line = f"{BOT} {WRITE_EMOJI}"
-    fetch_params = make_call("notion-fetch", {"id": "parent1"})
-    await plugin.on_call_tool_response(fetch_params, make_result(_notion_page(first_line)))
-
-    create_params = make_call(
-        "notion-create-pages",
-        {
-            "pages": [
-                {
-                    "parent": {"page_id": "parent1", "type": "page_id"},
-                    "properties": {"title": "Child"},
-                    "content": "Child body.",
-                }
-            ]
-        },
-    )
-    out = await plugin.on_call_tool_request(create_params)
-    page_content = out.arguments["pages"][0]["content"]
-    assert page_content.startswith(first_line + "\n")
-    assert "Child body." in page_content
-
-
-@pytest.mark.asyncio
-async def test_create_pages_per_page_parent_requires_write():
-    """Per-page parent format blocks with read-only permission."""
+async def test_create_pages_requires_write():
+    """create-pages is blocked with read-only permission."""
     plugin = _plugin()
     fetch_params = make_call("notion-fetch", {"id": "parent1"})
     await plugin.on_call_tool_response(
@@ -957,15 +900,7 @@ async def test_create_pages_per_page_parent_requires_write():
 
     create_params = make_call(
         "notion-create-pages",
-        {
-            "pages": [
-                {
-                    "parent": {"page_id": "parent1", "type": "page_id"},
-                    "properties": {"title": "Child"},
-                    "content": "Child body.",
-                }
-            ]
-        },
+        {"pages": [_create_page("parent1", "Child", "Child body.")]},
     )
     with pytest.raises(McpError):
         await plugin.on_call_tool_request(create_params)

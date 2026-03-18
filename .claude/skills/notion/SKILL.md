@@ -59,12 +59,14 @@ notion-update-page
 
 ### Creating pages
 
-New pages under a parent automatically inherit the parent's permission markers:
+New pages under a parent automatically inherit the parent's permission markers. Specify the parent inside each page object:
 
 ```
 notion-create-pages
-  parent: { page_id: "<parent-page-id>" }
-  ...
+  pages:
+    - parent: { page_id: "<parent-page-id>", type: page_id }
+      properties: { title: "New Page" }
+      content: "Page body..."
 ```
 
 ### Removing images

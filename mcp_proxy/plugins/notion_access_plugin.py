@@ -391,58 +391,41 @@ class NotionAccessPlugin(PluginBase):
     ) -> mt.CallToolRequestParams:
         """Check parent permission for create-pages; inherit first line.
 
-        Supports two formats:
-        - Top-level parent: ``{"parent": {"page_id": "..."}, "pages": [...]}``
-        - Per-page parent: ``{"pages": [{"parent": {"page_id": "..."}, ...}]}``
+        Each page in the ``pages`` array carries its own ``parent.page_id``.
         """
         args = dict(params.arguments or {})
         pages = args.get("pages", [])
-        top_parent = args.get("parent")
+        new_pages = []
+        any_page_parent = False
 
-        if top_parent and isinstance(top_parent, dict):
-            parent_page_id = top_parent.get("page_id", "")
-            if parent_page_id:
-                cached = await self._ensure_cached(parent_page_id, AccessLevel.WRITE)
-                new_pages = []
-                for page in pages:
-                    page = dict(page)
-                    content = self._strip_marker_line(page.get("content", ""))
-                    page["content"] = cached.first_line + "\n" + content
-                    new_pages.append(page)
-                args["pages"] = new_pages
-                return mt.CallToolRequestParams(name=params.name, arguments=args)
-        else:
-            # Check per-page parents (notion-create-pages nests parent inside each page)
-            new_pages = []
-            any_page_parent = False
-            for page in pages:
-                if isinstance(page, dict):
-                    page_parent = page.get("parent")
-                    if page_parent and isinstance(page_parent, dict):
-                        page_parent_id = page_parent.get("page_id", "")
-                        if page_parent_id:
-                            any_page_parent = True
-                            cached = await self._ensure_cached(page_parent_id, AccessLevel.WRITE)
-                            page = dict(page)
-                            content = self._strip_marker_line(page.get("content", ""))
-                            page["content"] = cached.first_line + "\n" + content
-                new_pages.append(page)
+        for page in pages:
+            if isinstance(page, dict):
+                page_parent = page.get("parent")
+                if page_parent and isinstance(page_parent, dict):
+                    page_parent_id = page_parent.get("page_id", "")
+                    if page_parent_id:
+                        any_page_parent = True
+                        cached = await self._ensure_cached(page_parent_id, AccessLevel.WRITE)
+                        page = dict(page)
+                        content = self._strip_marker_line(page.get("content", ""))
+                        page["content"] = cached.first_line + "\n" + content
+            new_pages.append(page)
 
-            if any_page_parent:
-                args["pages"] = new_pages
-                return mt.CallToolRequestParams(name=params.name, arguments=args)
+        if any_page_parent:
+            args["pages"] = new_pages
+            return mt.CallToolRequestParams(name=params.name, arguments=args)
 
-            # No parent anywhere — workspace-level creation
-            if not self._allow_workspace_creation:
-                raise McpError(
-                    ErrorData(
-                        code=_ERR_ACCESS_DENIED,
-                        message=(
-                            "Workspace-level page creation is not allowed. "
-                            "Specify a parent page_id."
-                        ),
-                    )
+        # No parent on any page — workspace-level creation
+        if not self._allow_workspace_creation:
+            raise McpError(
+                ErrorData(
+                    code=_ERR_ACCESS_DENIED,
+                    message=(
+                        "Workspace-level page creation is not allowed. "
+                        "Specify a parent page_id."
+                    ),
                 )
+            )
 
         return params
 

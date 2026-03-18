@@ -55,6 +55,8 @@ notion-update-page
   new_str: "# New content\n..."
 ```
 
+**Do not end `new_str` with `\n`** — a trailing newline creates a spurious blank block at the end of the page.
+
 **Do not edit the first line** of any page — it contains the permission markers and is protected. Any `update_content` operation targeting text from the first line will be blocked.
 
 ### Creating pages

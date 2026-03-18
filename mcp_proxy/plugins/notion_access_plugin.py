@@ -676,7 +676,10 @@ def _register_delete_image_tool(
         errors: list[str] = []
 
         async with httpx.AsyncClient() as client:
-            for block_id in block_ids:
+            for raw_block_id in block_ids:
+                # Normalize: strip "notion-image:" prefix and "/filename" suffix
+                # so the LLM can pass either the raw UUID or the full placeholder.
+                block_id = raw_block_id.removeprefix("notion-image:").split("/")[0]
                 try:
                     resp = await client.delete(
                         f"{_NOTION_API}/blocks/{block_id}",

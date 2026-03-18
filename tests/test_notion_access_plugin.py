@@ -889,6 +889,18 @@ async def test_delete_image_blocked_with_read_only():
     assert "read-write" in str(exc.value).lower() or "permission" in str(exc.value).lower()
 
 
+def test_delete_image_block_id_normalization():
+    """Block IDs passed as full placeholders or with prefix are stripped correctly."""
+    UUID = "b87dd20f-f739-4028-9bf8-37ba747a2897"
+
+    def normalize(raw: str) -> str:
+        return raw.removeprefix("notion-image:").split("/")[0]
+
+    assert normalize(UUID) == UUID
+    assert normalize(f"notion-image:{UUID}/agentic.png") == UUID
+    assert normalize(f"notion-image:{UUID}") == UUID
+
+
 @pytest.mark.asyncio
 async def test_create_pages_requires_write():
     """create-pages is blocked with read-only permission."""

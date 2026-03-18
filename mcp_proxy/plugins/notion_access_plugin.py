@@ -676,13 +676,40 @@ def _register_delete_image_tool(
         errors: list[str] = []
 
         async with httpx.AsyncClient() as client:
+            # List the page's children to resolve actual Notion block IDs.
+            # The UUID in a notion-image: placeholder is a file-upload UUID
+            # embedded in the S3 URL, NOT the Notion block ID — so we match
+            # via the cached signed URL (base path without query params).
+            list_resp = await client.get(
+                f"{_NOTION_API}/blocks/{page_id}/children",
+                headers=json_headers,
+            )
+            url_to_notion_block_id: dict[str, str] = {}
+            if list_resp.is_success:
+                for block in list_resp.json().get("results", []):
+                    if block.get("type") == "image":
+                        url = block.get("image", {}).get("file", {}).get("url", "")
+                        if url:
+                            url_to_notion_block_id[url.split("?")[0]] = block["id"]
+
             for raw_block_id in block_ids:
-                # Normalize: strip "notion-image:" prefix and "/filename" suffix
-                # so the LLM can pass either the raw UUID or the full placeholder.
+                # Normalize: strip "notion-image:" prefix and "/filename" suffix.
                 block_id = raw_block_id.removeprefix("notion-image:").split("/")[0]
+
+                # Resolve to the actual Notion block ID via the image cache.
+                actual_id: str | None = None
+                cached_img = plugin._image_cache.get(page_id, {}).get(block_id)
+                if cached_img:
+                    base_url = cached_img.signed_url.split("?")[0]
+                    actual_id = url_to_notion_block_id.get(base_url)
+
+                if actual_id is None:
+                    errors.append(f"{block_id}: image block not found on page")
+                    continue
+
                 try:
                     resp = await client.delete(
-                        f"{_NOTION_API}/blocks/{block_id}",
+                        f"{_NOTION_API}/blocks/{actual_id}",
                         headers=json_headers,
                     )
                     resp.raise_for_status()

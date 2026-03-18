@@ -42,6 +42,15 @@ _WRITE_BY_ACTION_IDS = {
     "updateActionsPriorityLevelId",
 }
 
+_WORKSPACE_SCOPED_TOOLS = {
+    "getWorkspace",
+    "getProjects",
+    "getActions",
+    "getNotebooks",
+    "insertActions",
+    *_WRITE_BY_ACTION_IDS,
+}
+
 
 def _extract_text(result: ToolResult) -> str:
     parts = []
@@ -98,8 +107,11 @@ class HiveAccessPlugin(PluginBase):
         name = params.name
         args = dict(params.arguments or {})
 
+        if name in _WORKSPACE_SCOPED_TOOLS:
+            args["workspaceId"] = self._workspace_id
+
         if name == "getWorkspace":
-            args.setdefault("workspaceId", self._workspace_id)
+            pass
 
         elif name == "getProjects":
             if args.get("includePrivate"):
@@ -125,7 +137,7 @@ class HiveAccessPlugin(PluginBase):
             args = self._enforce_project_ids(args)
 
         elif name == "getNotebooks":
-            args.setdefault("workspaceId", self._workspace_id)
+            pass
 
         elif name == "insertActions":
             args = self._enforce_insert_actions(args)

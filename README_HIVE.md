@@ -70,14 +70,14 @@ Set `persistent_connection: true` on the HTTP transport. This causes the proxy t
 
 | Tool | Enforcement |
 |------|-------------|
-| `getWorkspace` | Injects `workspaceId` if absent. |
-| `getProjects` | Clamps `specificIds` to allowlist (narrowing allowed, widening blocked). Blocks `includePrivate: true`. |
-| `getActions` | Clamps `projectIds` to allowlist. Injects full allowlist if absent. Blocks explicit `null`. |
+| `getWorkspace` | Forces `workspaceId` to the configured value. |
+| `getProjects` | Forces `workspaceId` to the configured value. Clamps `specificIds` to allowlist (narrowing allowed, widening blocked). Blocks `includePrivate: true`. |
+| `getActions` | Forces `workspaceId` to the configured value. Clamps `projectIds` to allowlist. Injects full allowlist if absent. Blocks explicit `null`. |
 | `actionComments` | Passed through (scoping by action ID, not project). |
 | `getLabels`, `getPriorityLevels`, `groups` | Passed through. |
-| `getNotebooks` | Injects `workspaceId` if absent. |
-| `insertActions` | Each action object must have a `projectId` from the allowlist. |
-| `updateActionsStatus` | Verifies all `actionIds` belong to allowed projects (cache + upstream fetch). |
+| `getNotebooks` | Forces `workspaceId` to the configured value. |
+| `insertActions` | Forces `workspaceId` to the configured value. Each action object must have a `projectId` from the allowlist. |
+| `updateActionsStatus` | Forces `workspaceId` to the configured value. Verifies all `actionIds` belong to allowed projects (cache + upstream fetch). |
 | `updateActionsTitles` | Same as above. |
 | `updateActionsDescription` | Same as above. |
 | `updateActionsAssignees` | Same as above. |

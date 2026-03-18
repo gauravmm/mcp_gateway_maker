@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import mcp.types as mt
@@ -37,7 +38,7 @@ def _plugin(**overrides) -> HiveAccessPlugin:
     return HiveAccessPlugin(_cfg(**overrides))
 
 
-def _call(name: str, arguments: dict | None = None) -> mt.CallToolRequestParams:
+def _call(name: str, arguments: dict[str, Any] | None = None) -> mt.CallToolRequestParams:
     return mt.CallToolRequestParams(name=name, arguments=arguments)
 
 
@@ -45,7 +46,7 @@ def _result(text: str) -> ToolResult:
     return ToolResult(content=[mt.TextContent(type="text", text=text)])
 
 
-def _actions_json(*actions: dict) -> str:
+def _actions_json(*actions: dict[str, Any]) -> str:
     return json.dumps({"actions": list(actions)})
 
 
@@ -74,10 +75,10 @@ async def test_get_workspace_injects_workspace_id():
 
 
 @pytest.mark.asyncio
-async def test_get_workspace_does_not_override_existing():
+async def test_get_workspace_overrides_existing():
     p = _plugin()
     result = await p.on_call_tool_request(_call("getWorkspace", {"workspaceId": "other"}))
-    assert result.arguments["workspaceId"] == "other"
+    assert result.arguments["workspaceId"] == WS_ID
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,15 @@ async def test_get_workspace_does_not_override_existing():
 async def test_get_projects_injects_full_allowlist():
     p = _plugin()
     result = await p.on_call_tool_request(_call("getProjects"))
+    assert result.arguments["workspaceId"] == WS_ID
     assert set(result.arguments["specificIds"]) == {PROJECT_A, PROJECT_B}
+
+
+@pytest.mark.asyncio
+async def test_get_projects_overrides_existing_workspace_id():
+    p = _plugin()
+    result = await p.on_call_tool_request(_call("getProjects", {"workspaceId": "other"}))
+    assert result.arguments["workspaceId"] == WS_ID
 
 
 @pytest.mark.asyncio
@@ -131,7 +140,15 @@ async def test_get_projects_blocks_include_private():
 async def test_get_actions_no_project_ids_injects_allowlist():
     p = _plugin()
     result = await p.on_call_tool_request(_call("getActions"))
+    assert result.arguments["workspaceId"] == WS_ID
     assert set(result.arguments["projectIds"]) == {PROJECT_A, PROJECT_B}
+
+
+@pytest.mark.asyncio
+async def test_get_actions_overrides_existing_workspace_id():
+    p = _plugin()
+    result = await p.on_call_tool_request(_call("getActions", {"workspaceId": "other"}))
+    assert result.arguments["workspaceId"] == WS_ID
 
 
 @pytest.mark.asyncio
@@ -197,11 +214,22 @@ async def test_non_get_actions_response_not_cached():
 
 
 @pytest.mark.asyncio
+async def test_get_notebooks_overrides_existing_workspace_id():
+    p = _plugin()
+    result = await p.on_call_tool_request(_call("getNotebooks", {"workspaceId": "other"}))
+    assert result.arguments["workspaceId"] == WS_ID
+
+
+@pytest.mark.asyncio
 async def test_insert_actions_allowed_project():
     p = _plugin()
     result = await p.on_call_tool_request(
-        _call("insertActions", {"actions": [{"projectId": PROJECT_A, "name": "Task"}]})
+        _call(
+            "insertActions",
+            {"workspaceId": "other", "actions": [{"projectId": PROJECT_A, "name": "Task"}]},
+        )
     )
+    assert result.arguments["workspaceId"] == WS_ID
     assert result.arguments["actions"][0]["projectId"] == PROJECT_A
 
 
@@ -230,8 +258,10 @@ async def test_insert_actions_missing_project_id_raises():
 async def test_write_tool_cached_allowed_passes():
     p = _plugin()
     p._action_project_cache["action1"] = PROJECT_A
-    # Should not raise
-    await p.on_call_tool_request(_call("updateActionsStatus", {"actionIds": ["action1"]}))
+    result = await p.on_call_tool_request(
+        _call("updateActionsStatus", {"workspaceId": "other", "actionIds": ["action1"]})
+    )
+    assert result.arguments["workspaceId"] == WS_ID
 
 
 @pytest.mark.asyncio

@@ -13,8 +13,8 @@ from mcp_proxy.plugins.notion_access_plugin import (
     AccessLevel,
     NotionAccessPlugin,
     _extract_text,
-    _normalize_page_id,
     _parse_permission,
+    normalize_page_id,
 )
 
 # ---------------------------------------------------------------------------
@@ -755,7 +755,7 @@ async def test_image_cache_populated_after_fetch():
     page_content = _notion_page(f"{BOT} {WRITE_EMOJI}", body=img)
     params = make_call("notion-fetch", {"id": "page1"})
     await plugin.on_call_tool_response(params, make_result(page_content))
-    normalized = _normalize_page_id("page1")
+    normalized = normalize_page_id("page1")
     assert normalized in plugin._image_cache
     assert _BLOCK_ID_1 in plugin._image_cache[normalized]
     assert plugin._image_cache[normalized][_BLOCK_ID_1].filename == _FILENAME_1
@@ -801,7 +801,7 @@ async def test_refetch_replaces_image_cache_atomically():
         params, make_result(_notion_page(f"{BOT} {WRITE_EMOJI}", body=img2))
     )
 
-    normalized = _normalize_page_id("page1")
+    normalized = normalize_page_id("page1")
     assert _BLOCK_ID_1 not in plugin._image_cache.get(normalized, {})
     assert _BLOCK_ID_2 in plugin._image_cache.get(normalized, {})
 
@@ -816,7 +816,7 @@ async def test_refetch_without_images_clears_image_cache():
         make_result(_notion_page(f"{BOT} {WRITE_EMOJI}", body=_image_md("A"))),
     )
 
-    assert _normalize_page_id("page1") in plugin._image_cache
+    assert normalize_page_id("page1") in plugin._image_cache
 
     out = await plugin.on_call_tool_response(
         params,
@@ -824,7 +824,7 @@ async def test_refetch_without_images_clears_image_cache():
     )
 
     assert out.content[0].text.endswith("No images remain.\n</content>\n</page>")
-    assert _normalize_page_id("page1") not in plugin._image_cache
+    assert normalize_page_id("page1") not in plugin._image_cache
 
 
 # ---------------------------------------------------------------------------

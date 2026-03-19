@@ -18,6 +18,11 @@ from mcp.types import ErrorData
 
 from ...config.schema import NotionAccessPluginConfig
 from ..base import PluginBase
+from .api import (
+    IMAGE_PLACEHOLDER_RE,
+    extract_page_id_from_fetch_args,
+    normalize_page_id,
+)
 from .image_tools import _NOTION_S3_IMAGE_RE
 
 if TYPE_CHECKING:
@@ -25,8 +30,6 @@ if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult
 
 _ERR_ACCESS_DENIED = -32601
-
-
 _WRITE_TOOLS = {"notion-update-page", "notion-create-comment", "notion-duplicate-page"}
 
 
@@ -96,31 +99,6 @@ def _extract_text(result: ToolResult | CallToolResult) -> str:
     return "\n".join(parts)
 
 
-def _normalize_page_id(page_id: str) -> str:
-    """Normalise a Notion page ID to dashed UUID format."""
-    raw = page_id.replace("-", "")
-    if len(raw) == 32:
-        return f"{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
-    return page_id
-
-
-def _extract_page_id_from_fetch_args(arguments: dict | None) -> str | None:
-    """Extract the page ID from notion-fetch arguments."""
-    if not arguments:
-        return None
-    return arguments.get("id")
-
-
-def _contains_image_placeholder(text: str) -> bool:
-    """Return True when the text contains a notion-image placeholder."""
-    return isinstance(text, str) and _IMAGE_PLACEHOLDER_RE.search(text) is not None
-
-
-def _make_error_result(message: str) -> ToolResult:
-    """Create a ToolResult with an error message."""
-    return ToolResult(content=[mt.TextContent(type="text", text=f"[ACCESS DENIED] {message}")])
-
-
 class NotionAccessPlugin(PluginBase):
     """Enforces per-bot page-level access control on a Notion MCP upstream."""
 
@@ -136,16 +114,16 @@ class NotionAccessPlugin(PluginBase):
         self._client: Client | None = None
 
     def _get_cached(self, page_id: str) -> CachedPermission | None:
-        entry = self._cache.get(_normalize_page_id(page_id))
+        entry = self._cache.get(normalize_page_id(page_id))
         if entry is None:
             return None
         if time.monotonic() > entry.expires_at:
-            del self._cache[_normalize_page_id(page_id)]
+            del self._cache[normalize_page_id(page_id)]
             return None
         return entry
 
     def _set_cached(self, page_id: str, level: AccessLevel, first_line: str) -> None:
-        self._cache[_normalize_page_id(page_id)] = CachedPermission(
+        self._cache[normalize_page_id(page_id)] = CachedPermission(
             level=level,
             first_line=first_line,
             expires_at=time.monotonic() + self._ttl,
@@ -237,7 +215,7 @@ class NotionAccessPlugin(PluginBase):
         args = dict(params.arguments or {})
         command = args.get("command", "")
         page_id = args.get("page_id", "")
-        has_cached_images = bool(self._image_cache.get(_normalize_page_id(page_id)))
+        has_cached_images = bool(self._image_cache.get(normalize_page_id(page_id)))
 
         if command == "update_content":
             for update in args.get("content_updates", []):
@@ -245,7 +223,18 @@ class NotionAccessPlugin(PluginBase):
                 old_str = update.get("old_str", "")
                 new_str = update.get("new_str", "")
 
-                if _contains_image_placeholder(old_str) or _contains_image_placeholder(new_str):
+                if isinstance(old_str, str) and IMAGE_PLACEHOLDER_RE.search(old_str) is not None:
+                    raise McpError(
+                        ErrorData(
+                            code=_ERR_ACCESS_DENIED,
+                            message=(
+                                "Text edits cannot target notion-image placeholders. "
+                                "Use notion-delete-image and notion-upload-image for image changes."
+                            ),
+                        )
+                    )
+
+                if isinstance(new_str, str) and IMAGE_PLACEHOLDER_RE.search(new_str) is not None:
                     raise McpError(
                         ErrorData(
                             code=_ERR_ACCESS_DENIED,
@@ -280,7 +269,7 @@ class NotionAccessPlugin(PluginBase):
                         ),
                     )
                 )
-            if _contains_image_placeholder(new_str):
+            if isinstance(new_str, str) and IMAGE_PLACEHOLDER_RE.search(new_str) is not None:
                 raise McpError(
                     ErrorData(
                         code=_ERR_ACCESS_DENIED,
@@ -354,7 +343,7 @@ class NotionAccessPlugin(PluginBase):
         if not result.content:
             return result
 
-        normalized_page_id = _normalize_page_id(page_id)
+        normalized_page_id = normalize_page_id(page_id)
         new_cache: dict[str, CachedImage] = {}
 
         def _replace(match: re.Match) -> str:
@@ -393,7 +382,7 @@ class NotionAccessPlugin(PluginBase):
         if params.name != "notion-fetch":
             return result
 
-        page_id = _extract_page_id_from_fetch_args(params.arguments)
+        page_id = extract_page_id_from_fetch_args(params.arguments)
         if not page_id:
             return result
 
@@ -407,7 +396,17 @@ class NotionAccessPlugin(PluginBase):
         self._set_cached(page_id, level, first_line)
 
         if level == AccessLevel.NONE:
-            return _make_error_result(f"No permission marker for {self._bot_name} on this page.")
+            return ToolResult(
+                content=[
+                    mt.TextContent(
+                        type="text",
+                        text=(
+                            f"[ACCESS DENIED] No permission marker for "
+                            f"{self._bot_name} on this page."
+                        ),
+                    )
+                ]
+            )
 
         return self._shorten_image_urls(page_id, result)
 

@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
-from api import API_URL, NOTION_VERSION, PLACEHOLDER_PREFIX
 from mcp import McpError
 from mcp.types import ErrorData
+
+from .api import API_URL, NOTION_VERSION, PLACEHOLDER_PREFIX
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -29,15 +30,12 @@ _NOTION_S3_IMAGE_RE = re.compile(
     r"\?[^)\s]*)"
     r"\)"
 )
-_IMAGE_PLACEHOLDER_RE = re.compile(r"!\[[^\]]*\]\(notion-image:[^)]+\)\n?")
-
-
 def register_upload_tool(server: FastMCP, plugin: NotionAccessPlugin, token: str) -> None:
     """Register the notion-upload-image tool on the aggregator server."""
+    from .api import normalize_page_id
     from .core import (
         _ERR_ACCESS_DENIED,
         AccessLevel,
-        _normalize_page_id,
     )
 
     @server.tool(name="notion-upload-image")
@@ -48,7 +46,7 @@ def register_upload_tool(server: FastMCP, plugin: NotionAccessPlugin, token: str
                 ErrorData(code=_ERR_ACCESS_DENIED, message=f"File not found: {file_path}")
             )
 
-        page_id = _normalize_page_id(page_id)
+        page_id = normalize_page_id(page_id)
         await plugin._ensure_cached(page_id, AccessLevel.WRITE)
 
         file_bytes = path.read_bytes()
@@ -145,15 +143,15 @@ def register_upload_tool(server: FastMCP, plugin: NotionAccessPlugin, token: str
 
 def register_delete_image_tool(server: FastMCP, plugin: NotionAccessPlugin, token: str) -> None:
     """Register the notion-delete-image tool on the aggregator server."""
+    from .api import normalize_page_id
     from .core import (
         _ERR_ACCESS_DENIED,
         AccessLevel,
-        _normalize_page_id,
     )
 
     @server.tool(name="notion-delete-image")
     async def notion_delete_image(page_id: str, block_ids: list[str]) -> str:
-        page_id = _normalize_page_id(page_id)
+        page_id = normalize_page_id(page_id)
         await plugin._ensure_cached(page_id, AccessLevel.WRITE)
 
         json_headers = {

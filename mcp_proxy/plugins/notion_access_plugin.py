@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 import mcp.types as mt
+from fastmcp import Client
 from fastmcp.tools.tool import Tool, ToolResult
 from mcp import McpError
 from mcp.types import ErrorData
@@ -51,9 +52,6 @@ _NOTION_S3_IMAGE_RE = re.compile(
 )
 
 _IMAGE_PLACEHOLDER_RE = re.compile(r"!\[[^\]]*\]\(notion-image:[^)]+\)\n?")
-
-# Tools that don't operate on specific pages
-_PASSTHROUGH_TOOLS = {"notion-search", "notion-get-teams", "notion-get-users"}
 
 # Tools that require WRITE access on a page
 _WRITE_TOOLS = {"notion-update-page", "notion-create-comment", "notion-duplicate-page"}
@@ -205,7 +203,6 @@ class NotionAccessPlugin(PluginBase):
         )
 
     def set_upstream_client(self, client: object) -> None:
-        from fastmcp import Client
 
         if isinstance(client, Client):
             self._client = client
@@ -235,7 +232,7 @@ class NotionAccessPlugin(PluginBase):
                 raise McpError(
                     ErrorData(
                         code=_ERR_ACCESS_DENIED,
-                        message=f"Page {page_id} not in cache. Fetch the page first to check permissions.",
+                        message=f"Page {page_id} not cached. Fetch the page first to check permissions.",  # noqa: E501
                     )
                 )
         if entry.level == AccessLevel.NONE:
@@ -246,12 +243,11 @@ class NotionAccessPlugin(PluginBase):
                 )
             )
         if entry.level.value < required.value:
-            level_name = "read-write" if required == AccessLevel.WRITE else "read"
             raise McpError(
                 ErrorData(
                     code=_ERR_ACCESS_DENIED,
                     message=(
-                        f"No {level_name} permission for {self._bot_name} on page {page_id}. "
+                        f"No {required.name} permission for {self._bot_name} on page {page_id}. "
                         f"Current access: {entry.level.name}."
                     ),
                 )
@@ -290,14 +286,6 @@ class NotionAccessPlugin(PluginBase):
                 ErrorData(code=_ERR_ACCESS_DENIED, message=f"Tool {name} is blocked by policy.")
             )
 
-        # Passthrough tools (no page-specific content)
-        if name in _PASSTHROUGH_TOOLS:
-            return params
-
-        # notion-fetch: allow through, response hook handles permission check
-        if name == "notion-fetch":
-            return params
-
         # notion-get-comments: requires at least READ on the page
         if name == "notion-get-comments":
             page_id = args.get("page_id", "")
@@ -305,28 +293,22 @@ class NotionAccessPlugin(PluginBase):
             return params
 
         # Write tools that operate on a single page_id
-        if name in _WRITE_TOOLS:
-            page_id = args.get("page_id", "")
-            cached = await self._ensure_cached(page_id, AccessLevel.WRITE)
-
+        elif name in _WRITE_TOOLS:
+            cached = await self._ensure_cached(args.get("page_id", ""), AccessLevel.WRITE)
             # For notion-update-page: protect the first line
             if name == "notion-update-page":
                 params = self._protect_first_line(params, cached)
 
-            return params
-
         # notion-move-pages: requires WRITE on all pages being moved
-        if name == "notion-move-pages":
-            page_ids = args.get("page_or_database_ids", [])
-            for pid in page_ids:
+        elif name == "notion-move-pages":
+            for pid in args.get("page_or_database_ids", []):
                 await self._ensure_cached(pid, AccessLevel.WRITE)
-            return params
 
         # notion-create-pages: check parent permission
-        if name == "notion-create-pages":
+        elif name == "notion-create-pages":
             return await self._handle_create_pages_request(params)
 
-        # Unknown tool: allow through
+        # Passthrough tools (no page-specific content)
         return params
 
     def _protect_first_line(
@@ -339,16 +321,13 @@ class NotionAccessPlugin(PluginBase):
 
         if command == "update_content":
             content_updates = args.get("content_updates", [])
-            new_updates = []
-            updates_changed = False
             for update in content_updates:
-                if isinstance(update, dict):
-                    old_str = update.get("old_str", "")
-                    new_str = update.get("new_str", "")
-                else:
-                    old_str = getattr(update, "old_str", "")
-                    new_str = getattr(update, "new_str", "")
-                if old_str and cached.first_line and old_str in cached.first_line:
+                assert isinstance(update, dict)
+                old_str = update.get("old_str", "")
+                new_str = update.get("new_str", "")
+                update["new_str"] = _strip_image_placeholders(new_str)
+
+                if old_str and (old_str in cached.first_line or cached.first_line in old_str):
                     raise McpError(
                         ErrorData(
                             code=_ERR_ACCESS_DENIED,
@@ -358,16 +337,6 @@ class NotionAccessPlugin(PluginBase):
                             ),
                         )
                     )
-                if isinstance(update, dict):
-                    stripped = _strip_image_placeholders(new_str)
-                    if stripped != new_str:
-                        updates_changed = True
-                        update = dict(update)
-                        update["new_str"] = stripped
-                new_updates.append(update)
-            if updates_changed:
-                args["content_updates"] = new_updates
-                return mt.CallToolRequestParams(name=params.name, arguments=args)
 
         elif command == "replace_content":
             new_str = args.get("new_str", "")
@@ -379,7 +348,7 @@ class NotionAccessPlugin(PluginBase):
 
     def _strip_marker_line(self, content: str) -> str:
         """Remove a leading permission marker line if the LLM already included one."""
-        if not content:
+        if not isinstance(content, str):
             return content
         first_line, _, rest = content.partition("\n")
         # Check if the first line looks like a permission marker for any bot
@@ -421,9 +390,7 @@ class NotionAccessPlugin(PluginBase):
             if not self._allow_workspace_creation:
                 # Detect parent mistakenly placed inside page objects
                 pages = args.get("pages", [])
-                has_nested_parent = any(
-                    isinstance(p, dict) and "parent" in p for p in pages
-                )
+                has_nested_parent = any(isinstance(p, dict) and "parent" in p for p in pages)
                 if has_nested_parent:
                     raise McpError(
                         ErrorData(
@@ -622,8 +589,7 @@ def _register_upload_tool(
                 raise McpError(
                     ErrorData(
                         code=_ERR_ACCESS_DENIED,
-                        message=f"Placeholder '{placeholder}' not found"
-                        f" in page {page_id}.{hint}",
+                        message=f"Placeholder '{placeholder}' not found in page {page_id}.{hint}",
                     )
                 )
 

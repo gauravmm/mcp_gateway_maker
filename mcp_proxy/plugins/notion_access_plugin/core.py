@@ -220,10 +220,13 @@ class NotionAccessPlugin(PluginBase):
         if command == "update_content":
             for update in args.get("content_updates", []):
                 assert isinstance(update, dict)
-                old_str = update.get("old_str", "")
-                new_str = update.get("new_str", "")
+                old_str = str(update.get("old_str", ""))
+                new_str = str(update.get("new_str", ""))
 
-                if isinstance(old_str, str) and IMAGE_PLACEHOLDER_RE.search(old_str) is not None:
+                if (
+                    IMAGE_PLACEHOLDER_RE.search(old_str) is not None
+                    or IMAGE_PLACEHOLDER_RE.search(new_str) is not None
+                ):
                     raise McpError(
                         ErrorData(
                             code=_ERR_ACCESS_DENIED,
@@ -234,18 +237,7 @@ class NotionAccessPlugin(PluginBase):
                         )
                     )
 
-                if isinstance(new_str, str) and IMAGE_PLACEHOLDER_RE.search(new_str) is not None:
-                    raise McpError(
-                        ErrorData(
-                            code=_ERR_ACCESS_DENIED,
-                            message=(
-                                "Text edits cannot target notion-image placeholders. "
-                                "Use notion-delete-image and notion-upload-image for image changes."
-                            ),
-                        )
-                    )
-
-                if old_str and (old_str in cached.first_line or cached.first_line in old_str):
+                if old_str in cached.first_line or cached.first_line in old_str:
                     raise McpError(
                         ErrorData(
                             code=_ERR_ACCESS_DENIED,
@@ -269,7 +261,7 @@ class NotionAccessPlugin(PluginBase):
                         ),
                     )
                 )
-            if isinstance(new_str, str) and IMAGE_PLACEHOLDER_RE.search(new_str) is not None:
+            if IMAGE_PLACEHOLDER_RE.search(new_str) is not None:
                 raise McpError(
                     ErrorData(
                         code=_ERR_ACCESS_DENIED,

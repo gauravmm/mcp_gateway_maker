@@ -18,6 +18,8 @@ from key_value.aio.stores.filetree import (
     FileTreeV1CollectionSanitizationStrategy,
     FileTreeV1KeySanitizationStrategy,
 )
+from mcp.shared.auth import OAuthToken
+from pydantic import ValidationError
 
 from .config.schema import (
     FilterPluginConfig,
@@ -53,14 +55,80 @@ class _RefreshOnStartOAuth(OAuth):
     refresh token first.
 
     This subclass marks loaded tokens as already expired so the first request
-    always hits the refresh-token path.  The browser flow only opens if the
-    refresh token itself is dead.
+    always hits the refresh-token path.  It also retries a 401 with the stored
+    refresh token once before allowing FastMCP to escalate to browser auth.
     """
 
     async def _initialize(self) -> None:
         await super()._initialize()
         if self.context.current_tokens:
             self.context.token_expiry_time = 0
+
+    async def _handle_refresh_response(self, response: httpx.Response) -> bool:
+        """Preserve the prior refresh token if the refresh response omits it."""
+        if response.status_code != 200:
+            return await super()._handle_refresh_response(response)
+
+        previous_refresh_token = (
+            self.context.current_tokens.refresh_token if self.context.current_tokens else None
+        )
+
+        try:
+            content = await response.aread()
+            token_response = OAuthToken.model_validate_json(content)
+            if not token_response.refresh_token and previous_refresh_token:
+                token_response = token_response.model_copy(
+                    update={"refresh_token": previous_refresh_token}
+                )
+
+            self.context.current_tokens = token_response
+            self.context.update_token_expiry(token_response)
+            await self.context.storage.set_tokens(token_response)
+            return True
+        except ValidationError:
+            self.context.clear_tokens()
+            return False
+
+    @staticmethod
+    def _clone_request(request: httpx.Request) -> httpx.Request:
+        """Build a resendable copy of an HTTPX request."""
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        headers.pop("content-length", None)
+        return httpx.Request(
+            request.method,
+            request.url,
+            headers=headers,
+            content=request.content,
+            extensions=request.extensions.copy(),
+        )
+
+    async def async_auth_flow(self, request: httpx.Request):
+        """Retry a 401 once with refresh-token auth before browser OAuth."""
+        async with contextlib.aclosing(super().async_auth_flow(request)) as gen:
+            response = None
+            while True:
+                try:
+                    yielded_request = await gen.asend(response)  # ty: ignore[invalid-argument-type]
+                except StopAsyncIteration:
+                    break
+
+                if yielded_request is not request:
+                    response = yield yielded_request
+                    continue
+
+                response = yield yielded_request
+                if response.status_code != 401 or not self.context.can_refresh_token():
+                    continue
+
+                refresh_request = await self._refresh_token()
+                refresh_response = yield refresh_request
+                if not await self._handle_refresh_response(refresh_response):
+                    continue
+
+                retry_request = self._clone_request(request)
+                self._add_auth_header(retry_request)
+                response = yield retry_request
 
 
 def _build_oauth(cfg: OAuthConfig, upstream_name: str) -> _RefreshOnStartOAuth:

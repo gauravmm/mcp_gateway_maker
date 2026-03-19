@@ -180,6 +180,10 @@ The result: the browser OAuth window re-opens intermittently after proxy restart
 
 ### The fix
 
-`_RefreshOnStartOAuth` (in `server.py`) subclasses `OAuth` and marks loaded tokens as already expired after initialization. This forces the first request to take the refresh-token path instead of blindly trusting the stale access token. The browser flow only opens if the refresh token itself has been revoked or expired.
+`_RefreshOnStartOAuth` (in `server.py`) subclasses `OAuth` and applies three defensive fixes:
+
+- After loading tokens from disk, it marks them as already expired so the first request takes the refresh-token path instead of blindly trusting a possibly stale access token.
+- If a protected request still comes back `401`, it retries once with the stored refresh token before allowing FastMCP to escalate to a browser flow.
+- If a refresh response omits `refresh_token`, it preserves the previously stored refresh token instead of discarding it.
 
 This workaround can be removed once fastmcp fixes the upstream bug (either by storing the actual expiry timestamp or by attempting a refresh on 401 before falling back to full re-authorization).

@@ -50,6 +50,58 @@ def _actions_json(*actions: dict[str, Any]) -> str:
     return json.dumps({"actions": list(actions)})
 
 
+def _edges_json(
+    nodes: list[dict[str, Any]],
+    page_info: dict[str, Any] | None = None,
+) -> str:
+    return json.dumps({
+        "edges": [{"node": n} for n in nodes],
+        "pageInfo": page_info or {"hasNextPage": False, "hasPreviousPage": False},
+    })
+
+
+# A synthetic full-field action node matching the upstream schema.
+_USER_A = "userAAAAAAAAAAAAA"
+_USER_B = "userBBBBBBBBBBBBB"
+
+_FULL_NODE: dict[str, Any] = {
+    "_id": "action1",
+    "title": "Test action",
+    "status": "Unstarted",
+    "customStatus": "Consider Doing",
+    "assignees": [_USER_A],
+    "projectId": PROJECT_A,
+    "labels": ["label1"],
+    "modifiedBy": _USER_A,
+    "createdBy": _USER_A,       # same as modifiedBy — should be omitted
+    "assignedBy": _USER_A,      # same as modifiedBy — should be omitted
+    "markdownDescription": "",  # always empty — dropped
+    "timeTracking": {"estimate": 0},  # always zero — dropped
+    "agileStoryPoints": 0,      # always zero — dropped
+    "privacy": "public",        # always public — dropped
+    "workspace": "ws123",       # constant — dropped
+    "createdAt": "2026-01-01T00:00:00Z",   # metadata — dropped
+    "modifiedAt": "2026-01-02T00:00:00Z",  # metadata — dropped
+    "adjustedDeadline": False,
+    "archived": False,
+    "checked": False,
+    "deleted": False,
+    "hasApprovals": False,
+    "hasSubactions": False,     # False — omitted
+    "hiddenFutureRecurring": False,
+    "isBlocked": False,
+    "isRisk": False,
+    "milestone": False,
+    "newAction": False,
+    "restrictExternalAccess": False,
+    "urgent": False,
+    "description": "",          # empty — omitted
+    "deadline": None,           # null — omitted
+    "parent": None,             # null — omitted
+    "linkTargets": None,        # null — omitted
+}
+
+
 # ---------------------------------------------------------------------------
 # Config validation
 # ---------------------------------------------------------------------------
@@ -394,6 +446,171 @@ async def test_update_actions_titles_empty_raises():
     p = _plugin()
     with pytest.raises(McpError, match="non-empty"):
         await p.on_call_tool_request(_call("updateActionsTitles", {"actionTitleUpdates": []}))
+
+
+# ---------------------------------------------------------------------------
+# Response compaction
+# ---------------------------------------------------------------------------
+
+PAGE_INFO = {"hasNextPage": True, "hasPreviousPage": False}
+
+
+
+@pytest.mark.asyncio
+async def test_compact_cache_populated_before_rewrite():
+    """Cache is populated even when compaction is on."""
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([{**_FULL_NODE, "_id": "action1", "projectId": PROJECT_A}])
+    await p.on_call_tool_response(params, _result(payload))
+    assert p._action_project_cache["action1"] == PROJECT_A
+
+
+@pytest.mark.asyncio
+async def test_compact_dropped_fields_absent():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    for field in ("markdownDescription", "timeTracking", "agileStoryPoints",
+                  "privacy", "workspace", "createdAt", "modifiedAt"):
+        assert field not in action, f"{field!r} should be dropped"
+
+
+@pytest.mark.asyncio
+async def test_compact_falsy_booleans_omitted():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    for field in ("archived", "checked", "deleted", "hasApprovals", "isRisk",
+                  "milestone", "urgent", "hasSubactions"):
+        assert field not in action, f"falsy {field!r} should be omitted"
+
+
+@pytest.mark.asyncio
+async def test_compact_truthy_booleans_kept():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    node = {**_FULL_NODE, "hasSubactions": True, "urgent": True}
+    payload = _edges_json([node])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert action["hasSubactions"] is True
+    assert action["urgent"] is True
+
+
+@pytest.mark.asyncio
+async def test_compact_empty_optionals_omitted():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE])  # description="", deadline=None, etc.
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    for field in ("description", "deadline", "parent", "linkTargets"):
+        assert field not in action, f"empty {field!r} should be omitted"
+
+
+@pytest.mark.asyncio
+async def test_compact_nonempty_optionals_kept():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    node = {**_FULL_NODE, "description": "Do the thing", "parent": "parentId123"}
+    payload = _edges_json([node])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert action["description"] == "Do the thing"
+    assert action["parent"] == "parentId123"
+
+
+@pytest.mark.asyncio
+async def test_compact_status_and_custom_status_both_kept():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert action["status"] == "Unstarted"
+    assert action["customStatus"] == "Consider Doing"
+
+
+@pytest.mark.asyncio
+async def test_compact_modified_by_always_present():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert action["modifiedBy"] == _USER_A
+
+
+@pytest.mark.asyncio
+async def test_compact_created_by_omitted_when_same_as_modified_by():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    # createdBy == modifiedBy == _USER_A in _FULL_NODE
+    payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert "createdBy" not in action
+    assert "assignedBy" not in action
+
+
+@pytest.mark.asyncio
+async def test_compact_created_by_kept_when_different():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    node = {**_FULL_NODE, "createdBy": _USER_B, "assignedBy": _USER_B}
+    payload = _edges_json([node])
+    result = await p.on_call_tool_response(params, _result(payload))
+    action = json.loads(result.content[0].text)["actions"][0]
+    assert action["createdBy"] == _USER_B
+    assert action["assignedBy"] == _USER_B
+
+
+@pytest.mark.asyncio
+async def test_compact_wrapper_keys_present():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE], PAGE_INFO)
+    result = await p.on_call_tool_response(params, _result(payload))
+    data = json.loads(result.content[0].text)
+    assert "projectIds" in data
+    assert "pageInfo" in data
+    assert "actions" in data
+
+
+@pytest.mark.asyncio
+async def test_compact_page_info_verbatim():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    payload = _edges_json([_FULL_NODE], PAGE_INFO)
+    result = await p.on_call_tool_response(params, _result(payload))
+    data = json.loads(result.content[0].text)
+    assert data["pageInfo"] == PAGE_INFO
+
+
+@pytest.mark.asyncio
+async def test_compact_project_ids_from_actions():
+    p = _plugin()
+    params = _call("getActions", {"projectIds": [PROJECT_A, PROJECT_B]})
+    node_b = {**_FULL_NODE, "_id": "action2", "projectId": PROJECT_B}
+    payload = _edges_json([_FULL_NODE, node_b])
+    result = await p.on_call_tool_response(params, _result(payload))
+    data = json.loads(result.content[0].text)
+    assert set(data["projectIds"]) == {PROJECT_A, PROJECT_B}
+
+
+@pytest.mark.asyncio
+async def test_compact_disabled_returns_raw_response():
+    p = _plugin(compact_responses=False)
+    params = _call("getActions", {"projectIds": [PROJECT_A]})
+    raw_payload = _edges_json([_FULL_NODE])
+    result = await p.on_call_tool_response(params, _result(raw_payload))
+    # Should be unchanged — the raw envelope, not the compact wrapper
+    assert result.content[0].text == raw_payload
 
 
 # ---------------------------------------------------------------------------

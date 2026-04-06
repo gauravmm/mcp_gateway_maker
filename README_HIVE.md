@@ -61,6 +61,7 @@ upstreams:
 | `workspace_id` | required | The Hive workspace ID. Injected into every tool that accepts `workspaceId`. |
 | `allowed_project_ids` | required | List of project IDs the agent is permitted to access. Must be non-empty. |
 | `hide_blocked` | `true` | When `true`, blocked items are hidden from `tools/list` responses. |
+| `compact_responses` | `true` | When `true`, `getActions` responses are rewritten to remove constant/redundant fields. See [Response compaction](#response-compaction) below. |
 
 ### `persistent_connection`
 
@@ -84,6 +85,58 @@ Set `persistent_connection: true` on the HTTP transport. This causes the proxy t
 | `updateActionsLabels` | Same as above. |
 | `updateActionsMilestone` | Same as above. |
 | `updateActionsPriorityLevelId` | Same as above. |
+
+## Response compaction
+
+`getActions` responses from the Hive upstream are verbose: 36 fields per action,
+most of which are constant, redundant, or absent in practice. With
+`compact_responses: true` (the default), the plugin rewrites each response before
+the agent sees it, reducing payload size by approximately **70%** (28KB → 8KB for
+a typical 25-action page).
+
+### Output format
+
+The compacted response is a JSON object with three keys:
+
+```json
+{
+  "projectIds": ["XJC8Lh8ADjsEx6dYx"],
+  "pageInfo": {"hasNextPage": true, "hasPreviousPage": false},
+  "actions": [...]
+}
+```
+
+- **`projectIds`** — the set of project IDs present in the returned actions.
+- **`pageInfo`** — verbatim from the upstream; use `hasNextPage` to decide whether
+  to fetch more pages.
+- **`actions`** — list of stripped action objects (unwrapped from the GraphQL
+  `{edges: [{node: ...}]}` envelope).
+
+### What is removed
+
+| Category | Fields |
+|----------|--------|
+| Always-constant | `markdownDescription`, `timeTracking`, `agileStoryPoints`, `privacy`, `workspace`, `createdAt`, `modifiedAt` |
+| Omitted when `false` | `adjustedDeadline`, `archived`, `checked`, `deleted`, `hasApprovals`, `hiddenFutureRecurring`, `isBlocked`, `isRisk`, `milestone`, `newAction`, `restrictExternalAccess`, `hasSubactions`, `urgent` |
+| Omitted when empty/null | `description`, `deadline`, `parent`, `linkTargets` |
+
+### User identity fields
+
+`modifiedBy` is always included. `createdBy` and `assignedBy` are included only
+when they differ from `modifiedBy` — in typical single-user workspaces they are
+all the same and are omitted entirely.
+
+### Status fields
+
+Both `status` and `customStatus` are kept unchanged. Use `customStatus` as the
+value when calling `updateActionsStatus`.
+
+### Cache interaction
+
+Compaction happens *after* the action→project cache is populated. The cache always
+sees the full upstream response regardless of this setting.
+
+---
 
 ## Cache behavior
 

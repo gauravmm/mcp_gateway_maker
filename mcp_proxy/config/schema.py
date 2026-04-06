@@ -123,6 +123,10 @@ class HiveAccessPluginConfig(BaseModel):
     allowed_project_ids: list[str]
     # When True (default), blocked tools are hidden from list responses.
     hide_blocked: bool = True
+    # When True (default), getActions responses are compacted: constant/redundant
+    # fields stripped, sparse booleans omitted, output wrapped with projectIds and
+    # pageInfo. Set to False only for debugging or when the upstream changes shape.
+    compact_responses: bool = True
 
 
 PluginConfig = Annotated[

@@ -31,6 +31,66 @@ if TYPE_CHECKING:
 _ERR_DENIED = -32601
 _log = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Response compaction helpers
+# ---------------------------------------------------------------------------
+
+# Fields that are always constant across actions and carry no information.
+_DROP_ALWAYS = frozenset({
+    "markdownDescription",
+    "timeTracking",
+    "agileStoryPoints",
+    "privacy",
+    "workspace",
+    "createdAt",
+    "modifiedAt",
+})
+
+# Sparse boolean flags: omit when False (the overwhelmingly common value).
+_DROP_IF_FALSE = frozenset({
+    "adjustedDeadline",
+    "archived",
+    "checked",
+    "deleted",
+    "hasApprovals",
+    "hiddenFutureRecurring",
+    "isBlocked",
+    "isRisk",
+    "milestone",
+    "newAction",
+    "restrictExternalAccess",
+    "hasSubactions",
+    "urgent",
+})
+
+# Optional fields: omit when empty string, None, or empty list.
+_DROP_IF_EMPTY = frozenset({"description", "deadline", "parent", "linkTargets"})
+
+
+def _compact_action(node: dict[str, Any]) -> dict[str, Any]:
+    """Return a stripped copy of an action node for token-efficient output.
+
+    - Drops constant/redundant fields.
+    - Omits sparse booleans when False.
+    - Omits optional fields when empty/null.
+    - Always includes ``modifiedBy``; includes ``createdBy`` and ``assignedBy``
+      only when they differ from ``modifiedBy``.
+    - Keeps both ``status`` and ``customStatus`` unchanged.
+    """
+    modified_by = node.get("modifiedBy")
+    out: dict[str, Any] = {}
+    for k, v in node.items():
+        if k in _DROP_ALWAYS:
+            continue
+        if k in _DROP_IF_FALSE and not v:
+            continue
+        if k in _DROP_IF_EMPTY and not v:
+            continue
+        if k in ("createdBy", "assignedBy") and v == modified_by:
+            continue
+        out[k] = v
+    return out
+
 # Tools that modify actions by actionIds (no projectId in params).
 _WRITE_BY_ACTION_IDS = {
     "updateActionsStatus",
@@ -94,6 +154,7 @@ class HiveAccessPlugin(PluginBase):
         self._workspace_id = config.workspace_id
         self._allowed_project_ids: frozenset[str] = frozenset(config.allowed_project_ids)
         self.hide_blocked = config.hide_blocked
+        self._compact_responses = config.compact_responses
         # actionId -> projectId; valid for session lifetime (actions are immutable re: project).
         self._action_project_cache: dict[str, str] = {}
         self._client: Client | None = None
@@ -179,13 +240,37 @@ class HiveAccessPlugin(PluginBase):
         if params.name != "getActions":
             return result
         text = _extract_text(result)
-        if text:
-            for action in _parse_actions_json(text):
-                action_id = action.get("id") or action.get("_id")
-                project_id = action.get("projectId")
-                if action_id and project_id:
-                    self._action_project_cache[str(action_id)] = str(project_id)
-        return result
+        if not text:
+            return result
+
+        actions = _parse_actions_json(text)
+
+        # Populate action→project cache (always, regardless of compaction setting).
+        for action in actions:
+            action_id = action.get("id") or action.get("_id")
+            project_id = action.get("projectId")
+            if action_id and project_id:
+                self._action_project_cache[str(action_id)] = str(project_id)
+
+        if not self._compact_responses or not actions:
+            return result
+
+        # Extract pageInfo from the raw envelope (edges format).
+        try:
+            raw = json.loads(text)
+            page_info = raw.get("pageInfo") if isinstance(raw, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            page_info = None
+
+        project_ids = sorted({a.get("projectId") for a in actions if a.get("projectId")})
+        compact = {
+            "projectIds": project_ids,
+            "pageInfo": page_info or {},
+            "actions": [_compact_action(a) for a in actions],
+        }
+        return ToolResult(
+            content=[mt.TextContent(type="text", text=json.dumps(compact, separators=(",", ":")))],
+        )
 
     # ------------------------------------------------------------------
     # Helpers

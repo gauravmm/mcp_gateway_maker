@@ -455,18 +455,6 @@ async def test_update_actions_titles_empty_raises():
 PAGE_INFO = {"hasNextPage": True, "hasPreviousPage": False}
 
 
-def _compact_result(nodes, page_info=None):
-    """Call on_call_tool_response with compact_responses=True and return parsed output."""
-    import asyncio
-    p = _plugin()  # compact_responses=True by default
-    params = _call("getActions", {"projectIds": [PROJECT_A]})
-    payload = _edges_json(nodes, page_info or PAGE_INFO)
-    result = asyncio.get_event_loop().run_until_complete(
-        p.on_call_tool_response(params, _result(payload))
-    )
-    text = result.content[0].text
-    return json.loads(text), p
-
 
 @pytest.mark.asyncio
 async def test_compact_cache_populated_before_rewrite():

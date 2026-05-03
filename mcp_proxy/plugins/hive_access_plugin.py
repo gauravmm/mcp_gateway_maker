@@ -120,18 +120,14 @@ def _extract_text(result: ToolResult) -> str:
     return "\n".join(parts)
 
 
-def _parse_actions_json(text: str) -> list[dict[str, Any]]:
-    """Try to extract a list of action objects from a getActions response.
+def _extract_actions(data: Any) -> list[dict[str, Any]]:
+    """Extract a list of action objects from already-parsed JSON data.
 
     Hive may return actions in several formats:
     - ``{"actions": [...]}`` or ``{"data": [...]}`` or ``{"results": [...]}``
     - A bare JSON list ``[...]``
     - GraphQL-style ``{"edges": [{"node": {...}}, ...]}``
     """
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return []
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -145,6 +141,15 @@ def _parse_actions_json(text: str) -> list[dict[str, Any]]:
             if isinstance(data.get(key), list):
                 return data[key]
     return []
+
+
+def _parse_actions_json(text: str) -> list[dict[str, Any]]:
+    """Parse a getActions response text and return the list of action objects."""
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    return _extract_actions(data)
 
 
 class HiveAccessPlugin(PluginBase):
@@ -243,7 +248,13 @@ class HiveAccessPlugin(PluginBase):
         if not text:
             return result
 
-        actions = _parse_actions_json(text)
+        # Parse JSON once; use both for cache population and compaction.
+        try:
+            raw = json.loads(text)
+        except (json.JSONDecodeError, ValueError):
+            return result
+
+        actions = _extract_actions(raw)
 
         # Populate action→project cache (always, regardless of compaction setting).
         for action in actions:
@@ -255,13 +266,7 @@ class HiveAccessPlugin(PluginBase):
         if not self._compact_responses or not actions:
             return result
 
-        # Extract pageInfo from the raw envelope (edges format).
-        try:
-            raw = json.loads(text)
-            page_info = raw.get("pageInfo") if isinstance(raw, dict) else None
-        except (json.JSONDecodeError, ValueError):
-            page_info = None
-
+        page_info = raw.get("pageInfo") if isinstance(raw, dict) else None
         project_ids = sorted({a.get("projectId") for a in actions if a.get("projectId")})
         compact = {
             "projectIds": project_ids,
